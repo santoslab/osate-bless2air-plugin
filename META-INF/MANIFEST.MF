@@ -1,0 +1,8 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: BlessAir
+Bundle-SymbolicName: org.sireum.aadl.osate.bless2Air
+Bundle-Version: 1.0.0.qualifier
+Automatic-Module-Name: org.sireum.aadl.osate.blessAir
+Require-Bundle: com.multitude.aadl.bless;bundle-version="3.1.2",
+ org.sireum.aadl.osate;bundle-version="1.0.2105252212"
