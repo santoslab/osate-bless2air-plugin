@@ -1,6 +1,6 @@
 Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
-Bundle-Name: BlessAir
+Bundle-Name: Sireum Bless 2 Air Plugin
 Bundle-SymbolicName: org.sireum.aadl.osate.bless2Air
 Bundle-Version: 1.0.0.qualifier
 Automatic-Module-Name: org.sireum.aadl.osate.blessAir
