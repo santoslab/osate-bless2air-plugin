@@ -9,10 +9,13 @@ import java.util.stream.Collectors;
 
 import org.eclipse.emf.ecore.EObject;
 import org.eclipse.xtext.EcoreUtil2;
+import org.osate.aadl2.CalledSubprogram;
 import org.osate.aadl2.Element;
 import org.osate.aadl2.NamedElement;
 import org.osate.aadl2.Port;
+import org.osate.aadl2.SubprogramAccess;
 import org.osate.aadl2.SubprogramClassifier;
+import org.osate.aadl2.SubprogramSubcomponent;
 import org.osate.aadl2.instance.ComponentInstance;
 import org.sireum.IS;
 import org.sireum.Option;
@@ -726,21 +729,50 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 	}
 
 	@Override
-	public Boolean caseSubprogramCall(SubprogramCall object) {
-		String qname = object.getProcedure().getFullName();
+	public Boolean caseSubprogramCall(SubprogramCall object) 
+	  {
+	  CalledSubprogram calledSubprogram = object.getProcedure();
+	  String qname = "NO NAME";
+	  SubprogramClassifier st = null;
+	  //subprogram call may be subprogram access
+	  if (calledSubprogram instanceof SubprogramAccess)
+	    {
+	    SubprogramAccess sa = (SubprogramAccess)calledSubprogram;
+	    qname = sa.getFullName();
+	    if (!subcomponentNames.contains(qname)) 
+	      {
+        if (sa.getClassifier() instanceof SubprogramClassifier) 
+          {
+           st = (SubprogramClassifier) sa.getClassifier();
 
-		if (!subcomponentNames.contains(qname)) {
-			if (object.getProcedure().getClassifier() instanceof SubprogramClassifier) {
-				SubprogramClassifier st = (SubprogramClassifier) object.getProcedure().getClassifier();
+        // TODO
+        // v.processSubprogramClassifier(st);
 
-				// TODO
-				// v.processSubprogramClassifier(st);
+           qname = convertRequiresSubprogramToSubcomponent(qname);
+          } 
+        else {  }
+	      }
+	    }  //done with SubprogramAccess
+	  //or subprogram call may be subprogram subcomponent
+    else if (calledSubprogram instanceof SubprogramSubcomponent)
+      {
+      SubprogramSubcomponent ss = (SubprogramSubcomponent)calledSubprogram;
+      qname = ss.getFullName();
+      if (!subcomponentNames.contains(qname)) 
+        {
+        if (ss.getClassifier() instanceof SubprogramClassifier) 
+          {
+           st = (SubprogramClassifier) ss.getClassifier();
+           qname = convertRequiresSubprogramToSubcomponent(qname);
+          } 
+        else {  }
+        }
+      }  //done with SubprogramSubcomponent
 
-				qname = convertRequiresSubprogramToSubcomponent(qname);
-			} else {
-
-			}
-		}
+	  assert st != null : qname + "has null SubprogramClassifier";
+	  
+    // TODO
+    // v.processSubprogramClassifier(st);
 
 		assert subcomponentNames.contains(qname) : qname + " not found";
 
@@ -771,7 +803,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		push(BTSSubprogramCallAction$.MODULE$.apply(name, l2is(params)));
 
 		return false;
-	}
+	}  //end of caseSubprogramCall
 
 	@Override
 	public Boolean casePortInput(PortInput object) {
@@ -889,7 +921,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		if (object.getPort() != null) {
 			assert ret == null;
 
-			ret = BTSDispatchTriggerPort$.MODULE$.apply(toName(object.getPort().getFullName()));
+			ret = BTSDispatchTriggerPort$.MODULE$.apply(toName(object.getPort().getPort().getFullName()));
 		}
 
 		assert ret != null;

@@ -3,6 +3,7 @@
 	<name>org.sireum.aadl.osate.bless2air</name>
 	<comment></comment>
 	<projects>
+		<project>org.sireum.aadl.osate</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>
