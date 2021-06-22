@@ -744,10 +744,6 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
         if (sa.getClassifier() instanceof SubprogramClassifier) 
           {
            st = (SubprogramClassifier) sa.getClassifier();
-
-        // TODO
-        // v.processSubprogramClassifier(st);
-
            qname = convertRequiresSubprogramToSubcomponent(qname);
           } 
         else {  }
