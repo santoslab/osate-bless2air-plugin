@@ -13,17 +13,13 @@ import org.osate.aadl2.CalledSubprogram;
 import org.osate.aadl2.Element;
 import org.osate.aadl2.NamedElement;
 import org.osate.aadl2.Port;
+import org.osate.aadl2.Subprogram;
 import org.osate.aadl2.SubprogramAccess;
-import org.osate.aadl2.SubprogramClassifier;
-import org.osate.aadl2.SubprogramSubcomponent;
 import org.osate.aadl2.instance.ComponentInstance;
 import org.sireum.IS;
 import org.sireum.Option;
 import org.sireum.Z;
 import org.sireum.Z$;
-import org.sireum.aadl.osate.architecture.AnnexVisitor;
-import org.sireum.aadl.osate.architecture.Visitor;
-import org.sireum.aadl.osate.architecture.VisitorUtil;
 import org.sireum.aadl.osate.util.SlangUtils;
 import org.sireum.hamr.ir.Annex;
 import org.sireum.hamr.ir.Annex$;
@@ -729,46 +725,30 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 	}
 
 	@Override
-	public Boolean caseSubprogramCall(SubprogramCall object) 
-	  {
-	  CalledSubprogram calledSubprogram = object.getProcedure();
-	  String qname = "NO NAME";
-	  SubprogramClassifier st = null;
-	  //subprogram call may be subprogram access
-	  if (calledSubprogram instanceof SubprogramAccess)
-	    {
-	    SubprogramAccess sa = (SubprogramAccess)calledSubprogram;
-	    qname = sa.getFullName();
-	    if (!subcomponentNames.contains(qname)) 
-	      {
-        if (sa.getClassifier() instanceof SubprogramClassifier) 
-          {
-           st = (SubprogramClassifier) sa.getClassifier();
-           qname = convertRequiresSubprogramToSubcomponent(qname);
-          } 
-        else {  }
-	      }
-	    }  //done with SubprogramAccess
-	  //or subprogram call may be subprogram subcomponent
-    else if (calledSubprogram instanceof SubprogramSubcomponent)
-      {
-      SubprogramSubcomponent ss = (SubprogramSubcomponent)calledSubprogram;
-      qname = ss.getFullName();
-      if (!subcomponentNames.contains(qname)) 
-        {
-        if (ss.getClassifier() instanceof SubprogramClassifier) 
-          {
-           st = (SubprogramClassifier) ss.getClassifier();
-           qname = convertRequiresSubprogramToSubcomponent(qname);
-          } 
-        else {  }
-        }
-      }  //done with SubprogramSubcomponent
+	public Boolean caseSubprogramCall(SubprogramCall object) {
+		CalledSubprogram cs = object.getProcedure();
 
-	  assert st != null : qname + "has null SubprogramClassifier";
-	  
-    // TODO
-    // v.processSubprogramClassifier(st);
+		String qname = null;
+		if (cs instanceof Subprogram) {
+			qname = ((Subprogram) cs).getFullName();
+		} else if(cs instanceof SubprogramAccess) {
+			qname = ((SubprogramAccess) cs).getFullName();
+		} else {
+			throw new RuntimeException("Unexpected: " + cs);
+		}
+
+		if (!subcomponentNames.contains(qname)) {
+			if (object.getProcedure() != null) {
+				// SubprogramClassifier st = object.getProcedure();
+
+				// TODO: Need to add subprogram from the declarative model
+				// v.processSubprogramClassifier(st);
+
+				qname = convertRequiresSubprogramToSubcomponent(qname);
+			} else {
+				throw new RuntimeException("Missing SubprogramClassifier for " + qname);
+			}
+		}
 
 		assert subcomponentNames.contains(qname) : qname + " not found";
 
