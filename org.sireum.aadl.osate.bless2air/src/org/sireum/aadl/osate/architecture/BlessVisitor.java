@@ -7,9 +7,14 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
+import org.eclipse.emf.common.util.URI;
 import org.eclipse.emf.ecore.EObject;
+import org.eclipse.emf.ecore.resource.Resource;
+import org.eclipse.emf.ecore.resource.ResourceSet;
 import org.eclipse.xtext.EcoreUtil2;
+import org.osate.aadl2.AadlPackage;
 import org.osate.aadl2.CalledSubprogram;
+import org.osate.aadl2.DataClassifier;
 import org.osate.aadl2.Element;
 import org.osate.aadl2.NamedElement;
 import org.osate.aadl2.Port;
@@ -20,6 +25,7 @@ import org.sireum.IS;
 import org.sireum.Option;
 import org.sireum.Z;
 import org.sireum.Z$;
+import org.sireum.aadl.osate.util.BAUtils;
 import org.sireum.aadl.osate.util.SlangUtils;
 import org.sireum.hamr.ir.Annex;
 import org.sireum.hamr.ir.Annex$;
@@ -43,6 +49,8 @@ import org.sireum.hamr.ir.BTSBinaryExp;
 import org.sireum.hamr.ir.BTSBinaryExp$;
 import org.sireum.hamr.ir.BTSBinaryOp;
 import org.sireum.hamr.ir.BTSClassifier$;
+import org.sireum.hamr.ir.BTSConditionalActions;
+import org.sireum.hamr.ir.BTSConditionalActions$;
 import org.sireum.hamr.ir.BTSDispatchCondition;
 import org.sireum.hamr.ir.BTSDispatchCondition$;
 import org.sireum.hamr.ir.BTSDispatchConjunction;
@@ -57,6 +65,8 @@ import org.sireum.hamr.ir.BTSExecutionOrder;
 import org.sireum.hamr.ir.BTSExp;
 import org.sireum.hamr.ir.BTSFormalExpPair;
 import org.sireum.hamr.ir.BTSFormalExpPair$;
+import org.sireum.hamr.ir.BTSIfBAAction;
+import org.sireum.hamr.ir.BTSIfBAAction$;
 import org.sireum.hamr.ir.BTSInternalCondition;
 import org.sireum.hamr.ir.BTSLiteralExp$;
 import org.sireum.hamr.ir.BTSLiteralType;
@@ -88,9 +98,12 @@ import org.sireum.hamr.ir.Name;
 import org.sireum.hamr.ir.Property;
 import org.sireum.hamr.ir.ValueProp;
 
+import com.multitude.aadl.bless.bLESS.AddSub;
+import com.multitude.aadl.bless.bLESS.Alternative;
 import com.multitude.aadl.bless.bLESS.AssertedAction;
 import com.multitude.aadl.bless.bLESS.Assertion;
 import com.multitude.aadl.bless.bLESS.Assignment;
+import com.multitude.aadl.bless.bLESS.BAAlternative;
 import com.multitude.aadl.bless.bLESS.BLESSSubclause;
 import com.multitude.aadl.bless.bLESS.BasicAction;
 import com.multitude.aadl.bless.bLESS.BehaviorActions;
@@ -103,15 +116,19 @@ import com.multitude.aadl.bless.bLESS.Disjunction;
 import com.multitude.aadl.bless.bLESS.DispatchCondition;
 import com.multitude.aadl.bless.bLESS.DispatchConjunction;
 import com.multitude.aadl.bless.bLESS.DispatchTrigger;
+import com.multitude.aadl.bless.bLESS.ElseAlternative;
+import com.multitude.aadl.bless.bLESS.ElseifAlternative;
 import com.multitude.aadl.bless.bLESS.ExecuteCondition;
 import com.multitude.aadl.bless.bLESS.FormalActual;
 import com.multitude.aadl.bless.bLESS.InternalCondition;
 import com.multitude.aadl.bless.bLESS.ModeCondition;
 import com.multitude.aadl.bless.bLESS.NamedAssertion;
 import com.multitude.aadl.bless.bLESS.NamelessAssertion;
+import com.multitude.aadl.bless.bLESS.NumericConstant;
 import com.multitude.aadl.bless.bLESS.PartialName;
 import com.multitude.aadl.bless.bLESS.PortInput;
 import com.multitude.aadl.bless.bLESS.PortOutput;
+import com.multitude.aadl.bless.bLESS.Quantity;
 import com.multitude.aadl.bless.bLESS.Relation;
 import com.multitude.aadl.bless.bLESS.SubprogramCall;
 import com.multitude.aadl.bless.bLESS.TransitionLabel;
@@ -165,6 +182,18 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		return toNone();
 	}
 
+	private void baseTypesHack(ResourceSet rs) {
+		URI u = URI.createURI("platform:/plugin/org.osate.contribution.sei/resources/packages/Base_Types.aadl");
+		Resource r = rs.getResource(u, true);
+		AadlPackage baseTypes = (AadlPackage) r.getContents().get(0);
+		for (org.osate.aadl2.Classifier c : baseTypes.getOwnedPublicSection().getOwnedClassifiers()) {
+			if (!c.getName().equalsIgnoreCase("natural")) {
+				org.sireum.hamr.ir.Component comp = v.processDataType((DataClassifier) c);
+				resolvedBlessTypes.put("Base_Types_" + c.getName(), comp.classifier().get());
+			}
+		}
+	}
+
 	@Override
 	public List<Annex> visit(ComponentInstance ci, List<String> path) {
 		List<Annex> ret = new ArrayList<>();
@@ -181,6 +210,8 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 						.stream()
 						.map(c -> c.getName())
 						.collect(Collectors.toList());
+
+				baseTypesHack(ci.eResource().getResourceSet());
 
 				visit(bas.get(0));
 
@@ -468,6 +499,20 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		} else if (object.getT() != null) {
 			typ = BTSLiteralType.byName("BOOLEAN").get();
 			exp = "true";
+		} else if (object.getNumeric_constant() != null) {
+			NumericConstant nc = object.getNumeric_constant();
+			Quantity q = nc.getQuantity();
+
+			assert !q.isScalar() : "Hmm, I'd think isScalar would be true for a single number";
+			assert q.getUnit() == null : "Need to handle the case where unit isn't null";
+
+			typ = BTSLiteralType.byName("INTEGER").get();
+			exp = q.getNumber();
+		} else if (object.getNul() != null) {
+			throw new RuntimeException("nul isn't supported");
+		} else if (object.getString_literal() != null) {
+			typ = BTSLiteralType.byName("").get();
+			exp = object.getString_literal();
 		} else {
 			throw new RuntimeException("Need to handle other types of Constant");
 		}
@@ -683,6 +728,48 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 	}
 
 	@Override
+	public Boolean caseAlternative(Alternative object) {
+		visit(object.getGuard());
+		BTSExp ifCond = pop();
+
+		if (object.getBaalt() != null) {
+			BAAlternative baa = object.getBaalt();
+
+			visit(baa.getActions());
+			BTSBehaviorActions ifActions = pop();
+
+			BTSConditionalActions ifBranch = BTSConditionalActions$.MODULE$.apply(ifCond, ifActions);
+
+			List<BTSConditionalActions> elseIfBranches = VisitorUtil.iList();
+
+			for (ElseifAlternative ea : baa.getElseifalt()) {
+				visit(ea.getTest());
+				BTSExp elsifCond = pop();
+
+				visit(ea.getActions());
+				BTSBehaviorActions elsifActions = pop();
+
+				BTSConditionalActions bca = BTSConditionalActions$.MODULE$.apply(elsifCond, elsifActions);
+				elseIfBranches = VisitorUtil.add(elseIfBranches, bca);
+			}
+
+			Option<BTSBehaviorActions> elseBranch = toNone();
+			if (baa.getElsealt() != null) {
+				ElseAlternative ea = baa.getElsealt();
+
+				visit(ea.getActions());
+				elseBranch = toSome(pop());
+			}
+
+			BTSIfBAAction ret = BTSIfBAAction$.MODULE$.apply(ifBranch, VisitorUtil.toISZ(elseIfBranches), elseBranch);
+			push(ret);
+		} else {
+			throw new RuntimeException("not yet");
+		}
+		return false;
+	}
+
+	@Override
 	public Boolean caseBasicAction(BasicAction object) {
 
 		if (object.getSkip() != null) {
@@ -768,10 +855,15 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 					if (fa.getActual().getValue() != null) {
 						Name actualName = toSimpleName(fa.getActual().getValue().getId().getFullName());
 						exp = toSome(BTSNameExp$.MODULE$.apply(actualName, toNone()));
+					} else if (fa.getActual().getConstant() != null) {
+						visit(fa.getActual().getConstant());
+						exp = toSome(pop());
 					} else {
 						throw new RuntimeException("Unexpected");
 					}
 				}
+
+				assert paramName.nonEmpty() : "paramName is empty";
 
 				params.add(BTSFormalExpPair$.MODULE$.apply(paramName, exp, toNone()));
 			}
@@ -780,6 +872,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 
 		return false;
 	}  //end of caseSubprogramCall
+
 
 	@Override
 	public Boolean casePortInput(PortInput object) {
@@ -965,6 +1058,30 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 	}
 
 	@Override
+	public Boolean caseAddSub(AddSub object) {
+
+		visit(object.getL());
+		BTSExp lhs = pop();
+
+		if (object.getR() == null || object.getR().isEmpty()) {
+			push(lhs);
+			return false;
+		}
+
+		// TODO: convert exp with multiple rhs into a single/nested bexp
+		assert object.getR().size() == 1 : "Not supporting weird things :)  AddSub must have a single rhs";
+
+		visit(object.getR().get(0));
+		BTSExp rhs = pop();
+
+		BTSBinaryOp.Type op = BAUtils.toBinaryOp(object.getSym());
+
+		push(BTSBinaryExp$.MODULE$.apply(op, lhs, rhs, toNone()));
+
+		return false;
+	}
+
+	@Override
 	public Boolean caseRelation(Relation object) {
 		visit(object.getL());
 		BTSExp lhs = pop();
@@ -1039,5 +1156,4 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 	public List<AnnexLib> buildAnnexLibraries(Element arg0) {
 		return VisitorUtil.iList();
 	}
-
 }
