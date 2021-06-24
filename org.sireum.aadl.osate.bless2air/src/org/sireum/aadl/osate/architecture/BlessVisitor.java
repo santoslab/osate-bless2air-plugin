@@ -65,8 +65,12 @@ import org.sireum.hamr.ir.BTSExecutionOrder;
 import org.sireum.hamr.ir.BTSExp;
 import org.sireum.hamr.ir.BTSFormalExpPair;
 import org.sireum.hamr.ir.BTSFormalExpPair$;
+import org.sireum.hamr.ir.BTSGuardedAction;
+import org.sireum.hamr.ir.BTSGuardedAction$;
 import org.sireum.hamr.ir.BTSIfBAAction;
 import org.sireum.hamr.ir.BTSIfBAAction$;
+import org.sireum.hamr.ir.BTSIfBLESSAction;
+import org.sireum.hamr.ir.BTSIfBLESSAction$;
 import org.sireum.hamr.ir.BTSInternalCondition;
 import org.sireum.hamr.ir.BTSLiteralExp$;
 import org.sireum.hamr.ir.BTSLiteralType;
@@ -88,7 +92,8 @@ import org.sireum.hamr.ir.BTSTransitionCondition;
 import org.sireum.hamr.ir.BTSTransitionLabel;
 import org.sireum.hamr.ir.BTSTransitionLabel$;
 import org.sireum.hamr.ir.BTSType;
-import org.sireum.hamr.ir.BTSUnaryOp;
+import org.sireum.hamr.ir.BTSUnaryExp;
+import org.sireum.hamr.ir.BTSUnaryExp$;
 import org.sireum.hamr.ir.BTSVariableCategory;
 import org.sireum.hamr.ir.BTSVariableDeclaration;
 import org.sireum.hamr.ir.BTSVariableDeclaration$;
@@ -104,6 +109,7 @@ import com.multitude.aadl.bless.bLESS.AssertedAction;
 import com.multitude.aadl.bless.bLESS.Assertion;
 import com.multitude.aadl.bless.bLESS.Assignment;
 import com.multitude.aadl.bless.bLESS.BAAlternative;
+import com.multitude.aadl.bless.bLESS.BLESSAlternative;
 import com.multitude.aadl.bless.bLESS.BLESSSubclause;
 import com.multitude.aadl.bless.bLESS.BasicAction;
 import com.multitude.aadl.bless.bLESS.BehaviorActions;
@@ -120,6 +126,7 @@ import com.multitude.aadl.bless.bLESS.ElseAlternative;
 import com.multitude.aadl.bless.bLESS.ElseifAlternative;
 import com.multitude.aadl.bless.bLESS.ExecuteCondition;
 import com.multitude.aadl.bless.bLESS.FormalActual;
+import com.multitude.aadl.bless.bLESS.GuardedAction;
 import com.multitude.aadl.bless.bLESS.InternalCondition;
 import com.multitude.aadl.bless.bLESS.ModeCondition;
 import com.multitude.aadl.bless.bLESS.NamedAssertion;
@@ -130,10 +137,12 @@ import com.multitude.aadl.bless.bLESS.PortInput;
 import com.multitude.aadl.bless.bLESS.PortOutput;
 import com.multitude.aadl.bless.bLESS.Quantity;
 import com.multitude.aadl.bless.bLESS.Relation;
+import com.multitude.aadl.bless.bLESS.Subexpression;
 import com.multitude.aadl.bless.bLESS.SubprogramCall;
 import com.multitude.aadl.bless.bLESS.TransitionLabel;
 import com.multitude.aadl.bless.bLESS.Type;
 import com.multitude.aadl.bless.bLESS.TypeDeclaration;
+import com.multitude.aadl.bless.bLESS.UnaryOperator;
 import com.multitude.aadl.bless.bLESS.Value;
 import com.multitude.aadl.bless.bLESS.ValueName;
 import com.multitude.aadl.bless.bLESS.Variable;
@@ -311,18 +320,6 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		throw new RuntimeException();
 	}
 
-	static BTSUnaryOp.Type toUnaryOp(String r) {
-		if (r.equals("-")) {
-			return BTSUnaryOp.byName("NEG").get();
-		} else if (r.equals("not")) {
-			return BTSUnaryOp.byName("NOT").get();
-		} else if (r.equals("abs")) {
-			return BTSUnaryOp.byName("ABS").get();
-		}
-
-		throw new RuntimeException();
-	}
-
 	@Override
 	public Boolean caseBLESSSubclause(BLESSSubclause object) {
 
@@ -445,10 +442,6 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		}
 
 		return false;
-	}
-
-	private String blessTypeToAadlTypeHack(String fullName) {
-		return fullName.replaceAll("_colon", ":").replaceAll("_dot", ".");
 	}
 
 	@Override
@@ -615,10 +608,6 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		return false;
 	}
 
-	private String convertToAadlName(String qualifiedName) {
-		return qualifiedName.replaceAll("_colon", ":").replaceAll("_dot", ".");
-	}
-
 	@Override
 	public Boolean caseBehaviorTransition(BehaviorTransition object) {
 
@@ -730,7 +719,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 	@Override
 	public Boolean caseAlternative(Alternative object) {
 		visit(object.getGuard());
-		BTSExp ifCond = pop();
+		BTSExp guard = pop();
 
 		if (object.getBaalt() != null) {
 			BAAlternative baa = object.getBaalt();
@@ -738,7 +727,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 			visit(baa.getActions());
 			BTSBehaviorActions ifActions = pop();
 
-			BTSConditionalActions ifBranch = BTSConditionalActions$.MODULE$.apply(ifCond, ifActions);
+			BTSConditionalActions ifBranch = BTSConditionalActions$.MODULE$.apply(guard, ifActions);
 
 			List<BTSConditionalActions> elseIfBranches = VisitorUtil.iList();
 
@@ -764,7 +753,29 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 			BTSIfBAAction ret = BTSIfBAAction$.MODULE$.apply(ifBranch, VisitorUtil.toISZ(elseIfBranches), elseBranch);
 			push(ret);
 		} else {
-			throw new RuntimeException("not yet");
+			BLESSAlternative ba = object.getBlessalt();
+
+			List<BTSGuardedAction> alternatives = VisitorUtil.iList();
+
+			visit(ba.getAction());
+			BTSAssertedAction action = pop();
+
+			BTSGuardedAction bga = BTSGuardedAction$.MODULE$.apply(guard, action);
+			alternatives = VisitorUtil.add(alternatives, bga);
+
+			for (GuardedAction ga : ba.getAlternative()) {
+				visit(ga.getGuard());
+				BTSExp altGuard = pop();
+
+				visit(ga.getAction());
+				BTSAssertedAction altAction = pop();
+
+				BTSGuardedAction altbga = BTSGuardedAction$.MODULE$.apply(altGuard, altAction);
+				alternatives = VisitorUtil.add(alternatives, altbga);
+			}
+
+			BTSIfBLESSAction biba = BTSIfBLESSAction$.MODULE$.apply(toNone(), VisitorUtil.toISZ(alternatives));
+			push(biba);
 		}
 		return false;
 	}
@@ -1053,6 +1064,27 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 
 		BTSBinaryExp be = BTSBinaryExp$.MODULE$.apply(op, lhs, rhs, toNone());
 		push(be);
+
+		return false;
+	}
+
+	@Override
+	public Boolean caseSubexpression(Subexpression object) {
+
+		if (object.getUnary() != null) {
+			UnaryOperator uo = object.getUnary();
+			if (uo.getNot() != null) {
+				visit(object.getTimed_expression());
+				BTSExp boolExp = pop();
+
+				BTSUnaryExp bue = BTSUnaryExp$.MODULE$.apply(BAUtils.toUnaryOp("!"), boolExp, toNone());
+				push(bue);
+			} else {
+				throw new RuntimeException("Need to handle other types of unary exp " + uo);
+			}
+		} else {
+			visit(object.getTimed_expression());
+		}
 
 		return false;
 	}
