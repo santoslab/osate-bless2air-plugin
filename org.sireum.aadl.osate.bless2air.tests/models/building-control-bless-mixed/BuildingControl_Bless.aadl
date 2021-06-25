@@ -1,0 +1,336 @@
+package BuildingControl
+public
+	with Base_Types, Data_Model, BLESS;
+
+	--------------------------------------------------------------------------------
+	-- Subprogram definitions
+	--
+	-- Currently these will be implemented as Slang-Extensions.  That is, the 
+	-- developer will need to manually provide Slang/C implementations rather 
+	-- than adding behavior via BA/Bless
+	--------------------------------------------------------------------------------
+	-- Returns the currently sensed physical temperature
+	-- @param theTemp return value
+	subprogram thermostatInterface
+		features
+			theTemp: out parameter Temperature.i;
+	end thermostatInterface;
+
+	-- Accepts a fan command and returns whether the command could be fulfilled
+	-- @param command the fan command
+	-- @param retValue return value
+	subprogram fanInterface
+		features
+			command: in parameter FanCmdEnum;
+			retValue: out parameter FanAckEnum;
+	end fanInterface;
+
+	-- returns an initial set point
+	-- @param retValue the return value
+	subprogram setInitialSetPoint
+		features
+			retValue: out parameter BuildingControl::SetPoint.i;
+	end setInitialSetPoint;
+
+	--------------------------------------------------------------------------------
+	system BuildingControlDemo
+	end BuildingControlDemo;
+
+	system implementation BuildingControlDemo.i
+		subcomponents
+			tcp: process TempControlProcess.i;
+	end BuildingControlDemo.i;
+
+	process TempControlProcess
+	end TempControlProcess;
+
+	process implementation TempControlProcess.i
+		subcomponents
+			tempSensor: thread TempSensor.i;
+			tempControl: thread TempControl.i;
+			fan: thread Fan.i;
+			operatorInterface: thread OperatorInterface.i;
+			alarmManager: thread AlarmManager.i;
+		connections
+			c1: port tempSensor.currentTemp -> tempControl.currentTemp;
+			c2: port tempSensor.currentTemp -> alarmManager.currentTemp;
+			c3: port tempSensor.currentTemp -> operatorInterface.currentTemp;
+			
+			c4: port tempSensor.sensorEvent -> tempControl.sensorEvent;
+			c5: port tempSensor.sensorEvent -> alarmManager.sensorEvent;
+			c6: port tempSensor.sensorEvent -> operatorInterface.sensorEvent;
+			
+			c7: port tempControl.fanCmd -> fan.fanCmd;
+			c8: port fan.fanAck -> tempControl.fanAck;
+
+			c9: port operatorInterface.setPoint -> tempControl.setPoint;
+			c10: port operatorInterface.setPoint -> alarmManager.setPoint;
+			c11: port operatorInterface.clearAlarm -> alarmManager.clearAlarm;
+			c12: port alarmManager.alarm -> operatorInterface.alarm;
+	end TempControlProcess.i;
+
+	--------------------------------------------------------------------
+	-- Thread Sensor
+	--------------------------------------------------------------------
+	thread TempSensor
+		features
+			currentTemp: out data port Temperature.i;
+			sensorEvent: out event port;
+			
+			-- BLESS only supports requires subprogram access whereas HAMR codegen currently only supports
+			-- subprograms as subcomponents.  Temp hack is to drop the _REQUIRES_HACK and make
+			-- sure there is a subcomponent with the prefix during AIR transform
+			getDeviceTemperature_REQUIRES_HACK: requires subprogram access thermostatInterface;
+		properties
+			Dispatch_Protocol => Periodic;
+			Period => 1 sec;
+	end TempSensor;
+
+	thread implementation TempSensor.i
+		subcomponents
+			getDeviceTemperature: subprogram thermostatInterface;
+			
+		annex BLESS {**
+			invariant <<true>>
+			variables temp ~ Temperature_i_Blessed
+			states
+				start : initial state;
+				run : complete state;
+			transitions
+				go: start -[]-> run {};
+			
+				operate: run -[ on dispatch ]-> run
+				{
+					getDeviceTemperature_REQUIRES_HACK(theTemp: temp);
+					currentTemp!(temp);
+					sensorEvent!
+				};
+		**};
+	end TempSensor.i;
+
+	--------------------------------------------------------------------
+	-- Thread Fan
+	--------------------------------------------------------------------
+	thread Fan
+		features
+			fanCmd: in event data port FanCmdEnum;
+			fanAck: out event data port FanAckEnum;
+			fanComm_REQUIRES_HACK: requires subprogram access fanInterface;
+		properties
+			Dispatch_Protocol => Sporadic;
+			Period => 1 sec;
+	end Fan;
+
+	thread implementation Fan.i
+		subcomponents
+			fanComm: subprogram fanInterface;
+
+		annex BLESS {**
+			invariant <<true>>
+			variables result ~ FanAckEnum_Blessed
+			states
+				start : initial state;
+				run : complete state;
+			transitions
+				go: start -[]-> run {};
+				operate: run -[ on dispatch fanCmd]-> run
+				{
+					fanComm_REQUIRES_HACK(command : fanCmd, retValue: result);
+					fanAck!(result)
+				};
+		**};
+	end Fan.i;
+
+	--------------------------------------------------------------------
+	-- Thread TempControl
+	--------------------------------------------------------------------
+	thread TempControl
+		features
+			currentTemp: in data port Temperature.i;
+			sensorEvent: in event port;
+			fanAck: in event data port FanAckEnum;
+			setPoint: in data port SetPoint.i;
+			fanCmd: out event data port FanCmdEnum;
+			
+			setInitSetPoint_REQUIRES_HACK: requires subprogram access setInitialSetPoint;
+		properties
+			Dispatch_Protocol => Sporadic;
+			Period => 1 sec;
+	end TempControl;
+
+	thread implementation TempControl.i
+		subcomponents
+			setInitSetPoint: subprogram setInitialSetPoint;
+				
+ 		annex BLESS {**
+		
+			invariant <<true>>
+			variables
+				lastCurrentTemp ~ Temperature_i_Blessed;
+				lastSetPoint ~ SetPoint_i_Blessed;
+			states
+				start : initial state;
+				run : complete state;
+				checkTemp : state;
+				waiting : complete state;
+			transitions
+				go: start -[]-> run 
+				{ 
+					setInitSetPoint_REQUIRES_HACK(lastSetPoint)
+				};
+		
+				operate: run -[ on dispatch sensorEvent ]-> checkTemp 
+				{ 
+					lastCurrentTemp := currentTemp;
+					lastSetPoint := setPoint
+				};
+		
+				sendOff: checkTemp -[ currentTemp.degree < lastSetPoint.low.degree ]-> waiting 
+				{ fanCmd!(FanCmdEnum_Blessed'Off) };
+		
+				sendOn: checkTemp -[ currentTemp.degree > lastSetPoint.high.degree ]-> waiting 
+				{ fanCmd!(FanCmdEnum_Blessed'Onn) };
+		
+				tempOk: checkTemp -[ ((currentTemp.degree <= lastSetPoint.high.degree) and 
+									(currentTemp.degree >= lastSetPoint.low.degree)) ]-> run;
+		
+				getack: waiting -[ on dispatch fanAck ]-> run
+				{ 
+					lastCurrentTemp := currentTemp;
+					lastSetPoint := setPoint
+				};
+		 **};
+	end TempControl.i;
+
+	--------------------------------------------------------------------
+	-- Thread OperatorInterface
+	--
+	-- No BA/Bless annotation so developer must manually add 
+	-- Slang/C implementations
+	--------------------------------------------------------------------
+	thread OperatorInterface
+		features
+			currentTemp: in data port Temperature.i;
+			sensorEvent: in event port;
+			setPoint: out data port SetPoint.i;
+			alarm: in event data port AlarmEnum;
+			clearAlarm: out event port;
+		properties
+			Dispatch_Protocol => Periodic;
+			Period => 1 sec;
+	end OperatorInterface;
+
+	thread implementation OperatorInterface.i
+	end OperatorInterface.i;
+
+	--------------------------------------------------------------------
+	-- Thread AlarmManager
+	--------------------------------------------------------------------
+	thread AlarmManager
+		features
+			currentTemp: in data port Temperature.i;
+			sensorEvent: in event port;
+			setPoint: in data port SetPoint.i;
+			alarm: out event data port AlarmEnum;
+			clearAlarm: in event port;
+		properties
+			Dispatch_Protocol => Sporadic;
+			Period => 1 sec;
+	end AlarmManager;
+
+	thread implementation AlarmManager.i
+
+		annex BLESS {**
+
+			invariant <<true>>
+			states
+				start : initial state;
+				normal : complete state;
+				checkAlarm: state; -- execution state
+				alarming : complete state;
+			transitions
+				go: start -[]-> normal;
+
+				operate: normal -[ on dispatch sensorEvent ]-> checkAlarm;
+
+				raiseAlarm: checkAlarm -[ (currentTemp.degree < setPoint.low.degree) or
+											(currentTemp.degree > setPoint.high.degree) ]-> alarming 
+				{ alarm!(AlarmEnum_Blessed'TempOutOfRange) };
+
+				inRange: checkAlarm -[ (currentTemp.degree >= setPoint.low.degree) and
+										(currentTemp.degree <= setPoint.high.degree) ]-> normal;
+		
+				reset: alarming -[ on dispatch clearAlarm ]-> normal
+				{ alarm!(AlarmEnum_Blessed'NoAlarm) };
+	**};
+	end AlarmManager.i;
+
+	--------------------------------------------------------------------
+	-- Data Type Definitions
+	--------------------------------------------------------------------
+	
+	annex Typedef {**
+		type Float_32_Blessed is quantity whole [-1 .. 1] 
+		type TempUnitEnum_Blessed is enumeration (Fahrenheit Celsius Kelvin)
+		type FanAckEnum_Blessed is enumeration (Ok Error)
+		type FanCmdEnum_Blessed is enumeration (Onn Off)
+		type AlarmEnum_Blessed is enumeration (TempOutOfRange NoAlarm)
+		type Temperature_i_Blessed is record (degree : Float_32_Blessed units : TempUnitEnum_Blessed)
+		type SetPoint_i_Blessed is record (low : Temperature_i_Blessed high : Temperature_i_Blessed)
+	**};
+	
+	data Temperature
+	end Temperature;
+
+	data implementation Temperature.i
+		subcomponents
+			degree: data Base_Types::Float_32;
+			unit: data TempUnitEnum;
+		properties
+			BLESS::Typed => "Temperature_i_Blessed";
+	end Temperature.i;
+
+	data SetPoint
+	end SetPoint;
+
+	data implementation SetPoint.i
+		subcomponents
+			low: data Temperature.i;
+			high: data Temperature.i;
+		properties
+			BLESS::Typed => "SetPoint_i_Blessed";
+	end SetPoint.i;
+
+	data TempUnitEnum
+		properties
+			Data_Model::Data_Representation => Enum;
+			Data_Model::Enumerators => ("Fahrenheit", "Celsius", "Kelvin");
+			
+			BLESS::Typed => "TempUnitEnum_Blessed";
+	end TempUnitEnum;
+
+	data FanAckEnum
+		properties
+			Data_Model::Data_Representation => Enum;
+			Data_Model::Enumerators => ("Ok", "Error");
+			
+			BLESS::Typed => "FanAckEnum_Blessed";
+	end FanAckEnum;
+
+	data FanCmdEnum
+		properties
+			Data_Model::Data_Representation => Enum;
+			Data_Model::Enumerators => ("Onn", "Off");
+			
+			BLESS::Typed => "FanCmdEnum_Blessed";
+	end FanCmdEnum;
+	
+	data AlarmEnum
+		properties
+			Data_Model::Data_Representation => Enum;
+			Data_Model::Enumerators => ("TempOutOfRange", "NoAlarm");
+			
+			BLESS::Typed => "AlarmEnum_Blessed";
+	end AlarmEnum;
+
+end BuildingControl;

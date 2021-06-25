@@ -1,0 +1,70 @@
+package Util
+public
+	with Base_Types;
+	with Datatypes;
+	
+--	subprogram temperature_majority
+--		features
+--			s1_reported_temperature : in parameter Datatypes::Kelvin.impl;
+--			s2_reported_temperature : in parameter Datatypes::Kelvin.impl;
+--			s3_reported_temperature : in parameter Datatypes::Kelvin.impl;
+--			voted_temp : out parameter Datatypes::Kelvin.impl;
+--	end temperature_majority;
+--	
+--	subprogram implementation temperature_majority.impl
+--		annex behavior_specification {**
+--			states
+--				s0 : initial final state;
+--			transitions
+--				s0 -[s1_reported_temperature = s2_reported_temperature or s1_reported_temperature = s3_reported_temperature]-> s0 { voted_temp := s1_reported_temperature };
+--				s0 -[s1_reported_temperature != s2_reported_temperature and s1_reported_temperature != s3_reported_temperature and s2_reported_temperature = s3_reported_temperature]-> s0 { voted_temp := s2_reported_temperature };
+--				s0 -[s1_reported_temperature != s2_reported_temperature and s1_reported_temperature != s3_reported_temperature and s2_reported_temperature != s3_reported_temperature]-> s0 { voted_temp := 0 };
+--		**};
+--	end temperature_majority.impl;
+--	
+--	subprogram count_agreement
+--		features
+--			s1_reported_temperature : in parameter Datatypes::Kelvin.impl;
+--			s2_reported_temperature : in parameter Datatypes::Kelvin.impl;
+--			s3_reported_temperature : in parameter Datatypes::Kelvin.impl;
+--			count_o : out parameter Base_Types::Unsigned_16;
+--	end count_agreement;
+--	
+--	subprogram implementation count_agreement.impl
+--		annex behavior_specification {**
+--			variables
+--				counter_out : Base_Types::Unsigned_16;
+--			states
+--				s0 : initial final state;
+--			transitions
+--				s0 -[]-> s0 {
+--					counter_out := 0;
+--					if (s1_reported_temperature = s2_reported_temperature) { counter_out := counter_out + 1 } end if;
+--					if (s2_reported_temperature = s3_reported_temperature) { counter_out := counter_out + 1 } end if;
+--					if (s1_reported_temperature = s3_reported_temperature) { counter_out := counter_out + 1 } end if;
+--					count_o := counter_out
+--				};
+--		**};
+--	end count_agreement.impl;
+
+	annex agree{**
+		node count_agreement_node(sensor1_in: int, sensor2_in: int, sensor3_in: int) returns (counter_out: int);
+  		var
+	 		s1s2: int;
+	 		s1s3: int;
+	 		s2s3: int; 
+   		let
+   	 	 	s1s2 = if(sensor1_in = sensor2_in) then 1 else 0 ;	
+   	  		s1s3 = if(sensor1_in = sensor3_in) then 1 else 0 ;	
+   	  		s2s3 = if(sensor2_in = sensor3_in) then 1 else 0 ;	
+   	  		counter_out = s1s2 + s1s3 + s2s3;
+    	tel;
+    	
+    	node temperature_majority_node(sensor1_in: int, sensor2_in: int, sensor3_in: int) returns (temperature_result: int);
+   		let	
+   	  		temperature_result = if((sensor1_in = sensor2_in) or (sensor1_in = sensor3_in)) then sensor1_in
+   	  							 else if (sensor2_in = sensor3_in) then sensor2_in
+   	  							 else 0;
+    	tel;
+	**};
+end Util;

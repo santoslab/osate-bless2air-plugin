@@ -1,0 +1,417 @@
+-- All errors are from the perspective of the voter component.
+--
+-- Doesn't imply anything about where they were sourced or how they got to the inputs.
+--
+--			Why wouldn't we want to model that as well?
+--
+-- It should be modeled, but not in the scope of the voter itself. The
+-- voter model should only include information about its own contenxt.
+--
+--			Unless I am mistaken, the analysis requires source/sink of errors.
+-- 
+-- You are not, but if that source is in a device, it should be captured in the device model.
+-- We don't have to worry about that quite yet.
+--
+-- Part of pushing that off is modeling the errors that are sourced in
+-- the shared memory that implements the dataport.
+--
+
+-- It assumes system semantics (voter user case) in current AADL voter model
+-- - static cyclic
+-- - single core
+-- - single write to dataports
+--
+-- "sink" is "one or fewer" with a three-input.
+--			Given majority voting, yes. But only because that is the implementation
+--			of the voter.
+--
+-- if more than one and asymmetric, transform.  Push this off until later.
+
+-- Incident:
+--
+-- 
+---------------------------------------------------------------------------------------
+-- Focusing on ValueRelatedErrors first to get the basic model in place.
+-- We will revisit Service and Replication later.
+---------------------------------------------------------------------------------------
+
+-- ValueRelatedError:
+-- 
+-- sink OutOfRange
+--		Range defined by assumption: 218-399 deg K.
+-- sink BelowRange
+--		(D) Redundant in this model if OutOfRange is defined
+--		(T) Maybe in this model. Maybe not in isolette.
+-- sink AboveRange
+--		(D) Redundant in this model if OutOfRange is defined
+--		(T) Maybe in this model. Maybe not in isolette.
+-- sink OutOfBounds
+--		represents an error where a service item value falls outside an acceptable 
+--		set of values as determined by an application domain function.
+--		(D) Is an example of this negative degrees in K?
+--      (T) Yes, good example. Or if a temperature unit came in as "Rankine"
+-- propagate OutOfCalibration
+--		represents an error where the actual values of a sequence differ by
+--		more than a tolerance but roughly constant offset C from the correct value.
+--		
+--   	(D)I would argue that these are sink in most cases and propagate in SUPER rare cases.
+--		To propagate these errors, two sensors would have to fail in the same way
+--		to the same value. Otherwise, the voter would recognize disagreement. 
+--		(T) Cannot assume low likelihood. Ex: separate devices use same power source 
+--		(multiple common mode failures).
+-- -- propagate StuckValue
+--		(T) Stuck value can be correlated (membrane rupture or connection break due to 
+--		high-G shock). 
+-- -- propagate UndetectableValueError
+-- -- propagate BoundedValueChange
+--		represents an error where a service delivers items whose value changes
+--		by more than an expected value.
+---------------------------------------------------------------------------------------
+
+-- ServiceError:
+-- 
+-- sink ServiceOmission -- nothing in dataport; e.g., dataport data structures deference
+-- sink ItemOmission -- one of the values in dataport structure missing
+-- propagate TransientServiceOmission
+-- propagate BoundedOmissionInterval
+
+-- ReplicationError:
+
+-- sink AsymmetricReplicatesError
+-- sink AsymmetricValue
+-- sink AsymmetricApproximateValue
+-- sink AsymmetricExactValue
+-- sink AsymmetricOmission
+-- sink AsymmetricItemOmission
+-- sink AsymmetricServiceOmission
+-- 
+-- propagate SymmetricReplicatesError
+-- propagate SymmetricValue
+-- propagate SymmetricApproximateValue
+-- propagate SymmetricExactValue
+-- propagate SymmetricOmission
+-- propagate SymmetricItemOmission
+-- propagate SymmetricServiceOmission
+
+---------------------------------------------------------------------------------------
+-- Not Applicable - This voter is designed to operate assuming a static cyclic schedule
+-- Therefore, TimingRelatedError and ConcurrencyError are assumed to not occur.
+--
+-- if they occur, then the voter will merely propagate these errors (i.e., they are unhandled)
+---------------------------------------------------------------------------------------
+
+package Voter
+public
+with Datatypes;
+with Base_Types;
+with BLESS_Types;
+with Slang_Embedded_API;
+with Subprograms;
+
+--with Util;
+	process voter
+		features
+			s1_reported_temperature : in data port Datatypes::Kelvin.impl;
+			s2_reported_temperature : in data port Datatypes::Kelvin.impl;
+			s3_reported_temperature : in data port Datatypes::Kelvin.impl;
+			result_temperature : out data port Datatypes::Kelvin.impl;
+			status : out data port Datatypes::Status.impl;
+		
+		annex agree {**
+			guarantee "Initial temperature result is zero." :
+				(result_temperature.temperature = 0) -> true;
+			
+			guarantee "Temperature result after voting depends on majority. If no agreement found, temperature is zero." :
+    			true -> (result_temperature.temperature = 
+    						if  ((s1_reported_temperature.temperature = s2_reported_temperature.temperature) 
+    						  or (s1_reported_temperature.temperature = s3_reported_temperature.temperature)
+    						) 
+    						then (s1_reported_temperature.temperature)
+    						else if (s2_reported_temperature.temperature = s3_reported_temperature.temperature) 
+    						then (s2_reported_temperature.temperature)
+    						else 0
+    			);
+		
+			guarantee "Status corresponds to 'uninit' in initial step.":
+				(status = enum(Datatypes::Status, uninit)) -> true;
+				
+			eq count_agreement : int = (if(s1_reported_temperature = s2_reported_temperature) then 1 else 0) 
+								     + (if(s1_reported_temperature = s3_reported_temperature) then 1 else 0) 
+								     + (if(s2_reported_temperature = s3_reported_temperature) then 1 else 0);
+			
+			guarantee "Status corresponds to good if all sensors agree, single_fault if one disagreement, 
+						and faulty if more than one disagreement between sensor inputs." :
+				true -> (status = if count_agreement > 1 then enum(Datatypes::Status, good)
+								  else if count_agreement = 1 then enum(Datatypes::Status, single_fault)
+								  else enum(Datatypes::Status, faulty));
+		**};
+	end voter;
+	
+	process implementation voter.impl
+		subcomponents
+			voter_thread : thread voter_thread.impl;
+		connections
+			s1_temp_to_device : port s1_reported_temperature -> voter_thread.s1_reported_temperature;
+			s2_temp_to_device : port s2_reported_temperature -> voter_thread.s2_reported_temperature;
+			s3_temp_to_device : port s3_reported_temperature -> voter_thread.s3_reported_temperature;
+			temperature_result : port voter_thread.result_temperature -> result_temperature;
+			status_result : port voter_thread.status -> status;
+	
+		
+	
+		annex agree {**
+			lemma "After initialization, if the status is faulty, the reported temperature is zero." :
+				true -> (status = enum(Datatypes::Status, faulty) => (result_temperature.temperature = 0));
+		**};
+	
+	end voter.impl;
+	
+	thread voter_thread
+		features
+			s1_reported_temperature : in data port Datatypes::Kelvin.impl;
+			s2_reported_temperature : in data port Datatypes::Kelvin.impl;
+			s3_reported_temperature : in data port Datatypes::Kelvin.impl;
+			result_temperature : out data port Datatypes::Kelvin.impl;
+			status : out data port Datatypes::Status.impl;
+			
+			kelvinBuilder_REQUIRES_HACK: requires subprogram access Datatypes::constructKelvin;
+			u160_REQUIRES_HACK: requires subprogram access Subprograms::u160;
+			u161_REQUIRES_HACK: requires subprogram access Subprograms::u160;
+			logInfo_REQUIRES_HACK: requires subprogram access Slang_Embedded_API::LogInfo;
+		flows
+      		-- the component is an information sink for reported temp
+      		-- and a source for result
+			s1_in: flow sink s1_reported_temperature;
+			s2_in: flow sink s2_reported_temperature;
+			s3_in: flow sink s3_reported_temperature;
+			result_temperature_out: flow source result_temperature;
+			result_status_out: flow source status;
+			
+		properties			
+			Dispatch_Protocol => Periodic;
+			Compute_Execution_Time => 1ms..1ms;
+			Period => 1 sec;
+	end voter_thread;
+	
+	thread implementation voter_thread.impl
+		subcomponents
+			kelvinBuilder: subprogram Datatypes::constructKelvin;
+			logInfo: subprogram Slang_Embedded_API::LogInfo;
+			u160: subprogram Subprograms::u160;
+			u161: subprogram Subprograms::u160;
+			
+		annex EMV2{**
+			use types ErrorLibrary;
+			error propagations
+				s1_reported_temperature : in propagation{OutOfRange, StuckValue, OutOfBounds, 
+													   OutOfCalibration, UndetectableValueError, 
+													   BoundedValueChange
+				};
+				s2_reported_temperature : in propagation{OutOfRange, StuckValue, OutOfBounds, 
+													   OutOfCalibration, UndetectableValueError, 
+													   BoundedValueChange
+				};
+				s3_reported_temperature : in propagation{OutOfRange, StuckValue, OutOfBounds, 
+													   OutOfCalibration, UndetectableValueError, 
+													   BoundedValueChange
+				};
+				result_temperature : out propagation{StuckValue, UndetectableValueError, BoundedValueChange, OutOfCalibration};
+			flows
+				s1_outofrange_path: error sink s1_reported_temperature{OutOfRange, OutOfBounds};
+				s2_outofrange_path: error sink s2_reported_temperature{OutOfRange, OutOfBounds};
+				s3_outofrange_path: error sink s3_reported_temperature{OutOfRange, OutOfBounds};
+				s1_path : error path s1_reported_temperature{StuckValue, UndetectableValueError, BoundedValueChange, OutOfCalibration} 
+										-> result_temperature;
+				s2_path : error path s2_reported_temperature{StuckValue, UndetectableValueError, BoundedValueChange, OutOfCalibration} 
+										-> result_temperature;
+				s3_path : error path s3_reported_temperature{StuckValue, UndetectableValueError, BoundedValueChange, OutOfCalibration} 
+										-> result_temperature;
+			
+			end propagations;
+		**};
+		
+		annex BLESS {**
+			variables
+				temperatureContainer ~ Datatypes_Kelvin_impl;
+				voted_temp ~ Datatypes_Kelvin_impl;
+				agreement_count ~ Base_Types_Unsigned_16;
+				--ZERO ~ Base_Types_Unsigned_16 := 0;
+				--ONE ~ Base_Types_Unsigned_16 := 1;
+				ZERO ~ Base_Types_Unsigned_16;
+				ONE ~ Base_Types_Unsigned_16;
+			states
+				uninit : initial state;
+				start_vote : complete state;
+				execute_vote : state;
+				good : state;
+				single_fault : state;
+				faulty : state;
+			transitions
+				requiredLabel_1: uninit -[]-> start_vote {
+					u160_REQUIRES_HACK(value:ZERO);
+					u161_REQUIRES_HACK(value:ONE); 
+					--result_temperature := 1; -- FIXME: why does BA allow this?
+					
+					--TODO: allow for field assignments 
+					--temperatureContainer.temperature := 0;
+
+					--kelvinBuilder(0, temperatureContainer);
+					--temperatureContainer := ( temperature => 0);
+					
+					result_temperature := temperatureContainer;
+					status!(Datatypes_Status_impl'uninit)
+				};
+				requiredLabel_2: start_vote -[on dispatch]-> execute_vote {
+				--    if (s1_reported_temperature = s2_reported_temperature or s1_reported_temperature = s3_reported_temperature)
+				--    	voted_temp := s1_reported_temperature
+				--    elsif (s2_reported_temperature = s3_reported_temperature)
+				--    	voted_temp := s2_reported_temperature
+				--    else
+				--    	-- TODO: add support for field assignments
+				--    	--voted_temp.temperature := 0
+				--    	
+				--    	kelvinBuilder_REQUIRES_HACK(value:ZERO, result:voted_temp)
+				--    end if;
+					
+					if (s1_reported_temperature = s2_reported_temperature or s1_reported_temperature = s3_reported_temperature)~>
+					  voted_temp := s1_reported_temperature
+					[] (not(s1_reported_temperature = s2_reported_temperature or s1_reported_temperature = s3_reported_temperature)
+						and
+						s2_reported_temperature = s3_reported_temperature)~>
+					  voted_temp := s2_reported_temperature
+					[] (not(s1_reported_temperature = s2_reported_temperature or s1_reported_temperature = s3_reported_temperature)
+						and
+						not(s2_reported_temperature = s3_reported_temperature))~>
+					  kelvinBuilder_REQUIRES_HACK(value:ZERO, result:voted_temp)
+					fi;
+					
+					agreement_count := ZERO;
+					if (s1_reported_temperature = s2_reported_temperature)  agreement_count := agreement_count + ONE  end if;
+					if (s2_reported_temperature = s3_reported_temperature)  agreement_count := agreement_count + ONE  end if;
+					if (s1_reported_temperature = s3_reported_temperature)  agreement_count := agreement_count + ONE  end if
+				};
+				
+				-- agreement_count will either be 0, 1, or 3 (for 3 sensors)
+				requiredLabel_3: execute_vote -[agreement_count > ONE]-> good 
+				  { status!(Datatypes_Status_impl'good) };
+				  
+				requiredLabel_4: execute_vote -[agreement_count = ONE]-> single_fault 
+				  { status!(Datatypes_Status_impl'single_fault) };
+				  
+				requiredLabel_5: execute_vote -[agreement_count < ONE]-> faulty 
+				  { status!(Datatypes_Status_impl'faulty) };
+				
+				--good -[s1_reported_temperature'fresh or s2_reported_temperature'fresh or s3_reported_temperature'fresh]-> start_vote;
+				--single_fault -[s1_reported_temperature'fresh or s2_reported_temperature'fresh or s3_reported_temperature'fresh]-> start_vote;
+				--faulty -[s1_reported_temperature'fresh or s2_reported_temperature'fresh or s3_reported_temperature'fresh]-> start_vote;
+				
+				requiredLabel_6: good -[]-> start_vote { 
+					logInfo_REQUIRES_HACK(str:"good: Placing ${voted_temp} on result_temperature data port.  agreement_count=${agreement_count}");
+					result_temperature := voted_temp
+				};
+				
+				requiredLabel_7: single_fault -[]-> start_vote { 
+					logInfo_REQUIRES_HACK(str:"single_fault: agreement_count=${agreement_count}")
+				};
+				
+				requiredLabel_8: faulty -[]-> start_vote { 
+					logInfo_REQUIRES_HACK(str:"faulty: agreement_count=${agreement_count}")
+				};
+		**};
+
+        --annex behavior_specification {**
+        --	variables
+        --		temperatureContainer: Datatypes::Kelvin.impl;
+        --		voted_temp : Datatypes::Kelvin.impl;
+        --		agreement_count : Base_Types::Unsigned_16;
+        --	states
+        --		uninit : initial state;
+        --		start_vote : complete state;
+        --		execute_vote : state;
+        --		good : state;
+        --		single_fault : state;
+        --		faulty : state;
+        --	transitions
+        --		uninit -[]-> start_vote {
+        --			--result_temperature := 0; -- FIXME: why does BA allow this?
+        --			
+        --			--TODO: allow for field assignments 
+        --			--temperatureContainer.temperature := 0;
+        --			
+        --			kelvinBuilder!("u16$0", temperatureContainer);
+        --			result_temperature := temperatureContainer;
+        --			status := Datatypes::Status.impl#Enumerators.uninit
+        --		};
+        --		start_vote -[on dispatch]-> execute_vote {
+        --			if (s1_reported_temperature = s2_reported_temperature or s1_reported_temperature = s3_reported_temperature) {
+        --				voted_temp := s1_reported_temperature
+        --			} elsif (s2_reported_temperature = s3_reported_temperature) {
+        --				voted_temp := s2_reported_temperature
+        --			} else {
+        --				-- TODO: add support for field assignments
+        --				--voted_temp.temperature := 0
+        --				
+        --				kelvinBuilder!("u16$0", voted_temp)
+        --			} end if;
+        --			
+        --			agreement_count := "u16$0";
+        --			if (s1_reported_temperature = s2_reported_temperature) { agreement_count := agreement_count + "u16$1" } end if;
+        --			if (s2_reported_temperature = s3_reported_temperature) { agreement_count := agreement_count + "u16$1" } end if;
+        --			if (s1_reported_temperature = s3_reported_temperature) { agreement_count := agreement_count + "u16$1" } end if
+        --		};
+        --		
+        --		-- agreement_count will either be 0, 1, or 3 (for 3 sensors)
+        --		execute_vote -[agreement_count > "u16$1"]-> good 
+        --		  { status := Datatypes::Status.impl#Enumerators.good };
+        --		  
+        --		execute_vote -[agreement_count = "u16$1"]-> single_fault 
+        --		  { status := Datatypes::Status.impl#Enumerators.single_fault };
+        --		  
+        --		execute_vote -[agreement_count < "u16$1"]-> faulty 
+        --		  { status := Datatypes::Status.impl#Enumerators.faulty };
+        --		
+        --		--good -[s1_reported_temperature'fresh or s2_reported_temperature'fresh or s3_reported_temperature'fresh]-> start_vote;
+        --		--single_fault -[s1_reported_temperature'fresh or s2_reported_temperature'fresh or s3_reported_temperature'fresh]-> start_vote;
+        --		--faulty -[s1_reported_temperature'fresh or s2_reported_temperature'fresh or s3_reported_temperature'fresh]-> start_vote;
+        --		
+        --		good -[]-> start_vote { 
+        --			logInfo!("good: Placing ${voted_temp} on result_temperature data port.  agreement_count=${agreement_count}");
+        --			result_temperature := voted_temp
+        --		};
+        --		
+        --		single_fault -[]-> start_vote { logInfo!("single_fault: agreement_count=${agreement_count}") };
+        --		
+        --		faulty -[]-> start_vote { logInfo!("faulty: agreement_count=${agreement_count}") };
+        --**};
+
+		annex agree {**
+			-- Majority voting 
+			
+			guarantee "Initial temperature result is zero." :
+				(result_temperature.temperature = 0) -> true;
+			
+    		guarantee "Temperature result after voting depends on majority. If no agreement found, temperature is zero." :
+    			true -> (result_temperature.temperature = 
+    						Util::temperature_majority_node(s1_reported_temperature.temperature, s2_reported_temperature.temperature, 
+    												   s3_reported_temperature.temperature
+    						)
+    			);
+		
+			guarantee "Status initialization step is 'uninit'.":
+				(status = enum(Datatypes::Status, uninit)) -> true;
+		
+			eq count_agreement : int = Util::count_agreement_node(s1_reported_temperature.temperature, s2_reported_temperature.temperature, 
+															 s3_reported_temperature.temperature
+			);
+			
+			guarantee "Status results correspond to 
+					   good: no fault detected, single fault: one fault, faulty: more than one fault.":
+				true -> (status = if count_agreement > 1 then enum(Datatypes::Status, good)
+								  else if count_agreement = 1 then enum(Datatypes::Status, single_fault)
+								  else enum(Datatypes::Status, faulty)
+				);
+		
+		**}	;
+		
+	end voter_thread.impl;
+end Voter;

@@ -1,0 +1,22 @@
+package Subprograms
+public
+	
+	with Base_Types;
+	
+	subprogram u160
+		features
+			value: out parameter Base_Types::Unsigned_16;
+	end u160;
+	
+	subprogram u161
+		features
+			value: out parameter Base_Types::Unsigned_16;
+	end u160;
+	
+	subprogram toU16
+		features
+			value: in parameter Base_Types::Integer;
+			var: out parameter Base_Types::Unsigned_16;
+	end u160;	
+	
+end Subprograms;

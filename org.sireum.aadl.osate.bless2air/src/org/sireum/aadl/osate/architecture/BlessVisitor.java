@@ -131,7 +131,6 @@ import com.multitude.aadl.bless.bLESS.InternalCondition;
 import com.multitude.aadl.bless.bLESS.ModeCondition;
 import com.multitude.aadl.bless.bLESS.NamedAssertion;
 import com.multitude.aadl.bless.bLESS.NamelessAssertion;
-import com.multitude.aadl.bless.bLESS.NumericConstant;
 import com.multitude.aadl.bless.bLESS.PartialName;
 import com.multitude.aadl.bless.bLESS.PortInput;
 import com.multitude.aadl.bless.bLESS.PortOutput;
@@ -493,18 +492,20 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 			typ = BTSLiteralType.byName("BOOLEAN").get();
 			exp = "true";
 		} else if (object.getNumeric_constant() != null) {
-			NumericConstant nc = object.getNumeric_constant();
-			Quantity q = nc.getQuantity();
+			Quantity q = object.getNumeric_constant();
 
 			assert !q.isScalar() : "Hmm, I'd think isScalar would be true for a single number";
 			assert q.getUnit() == null : "Need to handle the case where unit isn't null";
 
 			typ = BTSLiteralType.byName("INTEGER").get();
-			exp = q.getNumber();
+			exp = q.getNumber().getLit();
+
+			assert q.getNumber().getProperty() == null && q.getNumber().getPropertyConstant() == null
+					: "What are these?";
 		} else if (object.getNul() != null) {
 			throw new RuntimeException("nul isn't supported");
 		} else if (object.getString_literal() != null) {
-			typ = BTSLiteralType.byName("").get();
+			typ = BTSLiteralType.byName("STRING").get();
 			exp = object.getString_literal();
 		} else {
 			throw new RuntimeException("Need to handle other types of Constant");

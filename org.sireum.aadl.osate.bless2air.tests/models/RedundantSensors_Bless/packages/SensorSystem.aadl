@@ -1,0 +1,49 @@
+package SensorSystem
+public
+with Sensors, Voter, Datatypes;
+
+	system redundant_sensors
+		features
+			env_temperature : in data port Datatypes::Kelvin.impl;
+			reported_temperature : out data port Datatypes::Kelvin.impl;
+			reported_status : out data port Datatypes::Status.impl;
+			
+		annex agree{**
+			-- Full Military temperature grade: −55 °C to 125 °C
+			-- In kelvin (floor/ceiling): 218K to 399K
+			assume "Environmental temperature within full military grade." :
+				(218 <= env_temperature.temperature) and (env_temperature.temperature <= 399);
+		
+			guarantee "The temperature during initialization is zero." :
+				(reported_temperature.temperature = 0) -> true;
+				
+			guarantee "After initialization, the reported temperature equals the environmental temperature." :
+				true -> (reported_temperature = env_temperature);
+				
+			guarantee "The status during initialization is 'uninit'.":
+				(reported_status = enum(Datatypes::Status, uninit)) -> true;
+			
+			guarantee "After initialization, if the status is faulty, the reported temperature is zero." :
+				true -> (reported_status = enum(Datatypes::Status, faulty) => (reported_temperature.temperature = 0));
+			
+		**};
+	end redundant_sensors;
+	
+	system implementation redundant_sensors.impl
+		subcomponents
+			s1 : process Sensors::sensorDriver.impl;
+			s2 : process Sensors::sensorDriver.impl;
+			s3 : process Sensors::sensorDriver.impl;
+			voter : process Voter::voter.impl;
+		connections
+			temp_to_sensor1 : port env_temperature -> s1.temperature_input;
+			temp_to_sensor2 : port env_temperature -> s2.temperature_input;
+			temp_to_sensor3 : port env_temperature -> s3.temperature_input;
+			sensor1_to_voter : port s1.reported_temperature -> voter.s1_reported_temperature;
+			sensor2_to_voter : port s2.reported_temperature -> voter.s2_reported_temperature;
+			sensor3_to_voter : port s3.reported_temperature -> voter.s3_reported_temperature;
+			temperature_result_from_voter : port voter.result_temperature -> reported_temperature;
+			status_result_from_voter : port voter.status -> reported_status;
+			
+	end redundant_sensors.impl;
+end SensorSystem;

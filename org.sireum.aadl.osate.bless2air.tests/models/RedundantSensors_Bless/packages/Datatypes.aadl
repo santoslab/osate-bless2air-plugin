@@ -1,0 +1,41 @@
+package Datatypes
+public
+with Data_Model, Base_Types, BLESS;
+
+  data Kelvin
+  end Kelvin;
+  
+  data implementation Kelvin.impl
+  	subcomponents
+  		temperature : data Base_Types::Unsigned_16;
+  	properties
+  		BLESS::Typed => "Datatypes_Kelvin_impl";
+  end Kelvin.impl;
+  
+  
+  subprogram constructKelvin
+  	features
+  		value: in parameter Base_Types::Unsigned_16;
+  		result: out parameter Kelvin.impl;
+  end constructKelvin;
+  
+  data Status
+  	properties
+  	  -- There are various ways of representing
+  	  -- the options for status (uninitialized, good, single fault, faulty),
+  	  -- but this is the easiest in terms of defining enum values.
+  	  -- It can change if necessary.
+  	  Data_Model::Data_Representation => Enum;
+      Data_Model::Enumerators => ("uninit", "good", "single_fault", "faulty");
+      BLESS::Typed => "Datatypes_Status_impl";
+  end Status;
+  
+  data implementation Status.impl
+  end Status.impl;
+  
+  annex Typedef {**
+  	type Base_Types_Unsigned_16 is quantity whole [-1 .. 1]
+  	type Datatypes_Kelvin_impl is record (temperature : Base_Types_Unsigned_16)
+  	type Datatypes_Status_impl is enumeration (uninit good single_fault faulty) 
+  **};
+end Datatypes;

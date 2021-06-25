@@ -1,0 +1,19 @@
+package Slang_Embedded_API
+public
+	with Base_Types;
+
+	subprogram LogInfo
+		features
+			str: in parameter Base_Types::String;
+	end LogInfo;
+	
+	subprogram LogDebug
+		features
+			str: in parameter Base_Types::String;
+	end LogDebug;
+	
+	subprogram LogError
+		features
+			str: in parameter Base_Types::String;
+	end LogError;
+end Slang_Embedded_API;

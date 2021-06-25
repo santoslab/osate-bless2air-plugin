@@ -1,0 +1,158 @@
+package Sensors
+public
+	with Datatypes;
+	with BLESS;
+	with Subprograms;
+	renames Base_Types::all;
+
+	with ErrorLibrary;
+
+	process sensorDriver
+		features
+			temperature_input: in data port Datatypes::Kelvin.impl;
+			reported_temperature: out data port Datatypes::Kelvin.impl;
+
+		annex agree {**
+			-- Full Military temperature grade: −55 °C to 125 °C
+			-- In kelvin (floor/ceiling): 218K to 399K
+			assume "Environmental temperature within full military grade." :
+				(218 <= temperature_input.temperature) and (temperature_input.temperature <= 399);
+		
+			guarantee "Reported temperature equals input temperature after initial state." :
+				true -> (reported_temperature.temperature = temperature_input.temperature);
+		**};
+
+	end sensorDriver;
+
+	process implementation sensorDriver.impl
+		subcomponents
+			sensor: thread sensor.impl;
+
+		connections
+			read_to_sensor: port temperature_input -> sensor.temperature_input;
+			reported_to_device: port sensor.reported_temperature -> reported_temperature;
+	end sensorDriver.impl;
+
+
+	subprogram temperatureSimulator
+		features
+			result: out parameter Datatypes::Kelvin.impl;
+	end temperatureSimulator;
+
+
+	--   sensor thread
+	--
+	--   The sensor thread models the software (e.g., the driver) used to interact with the
+	--   sensor hardware.   
+	-- 
+	--   For simplicity, the sensor hardware is not modeled in this example.
+	--
+	--  Acquisition of temperature sensor values will be simulated in the software for this 
+	--  component.
+	thread sensor
+		features
+			temperature_input: in data port Datatypes::Kelvin.impl;
+			reported_temperature: out data port Datatypes::Kelvin.impl;
+			
+            kelvinBuilder_REQUIRES_HACK: requires subprogram access Datatypes::constructKelvin;
+            senseTemperature_REQUIRES_HACK: requires subprogram access temperatureSimulator;            
+            u160_REQUIRES_HACK: requires subprogram access Subprograms::u160;
+		flows
+			-- the component is an information source for reported temp
+			report_out: flow source reported_temperature;
+
+		properties
+			Dispatch_Protocol => Periodic;
+			Compute_Execution_Time => 1ms .. 1ms;
+			Period => 1 sec;
+	end sensor;
+
+
+	thread implementation sensor.impl
+		subcomponents
+			senseTemperature: subprogram temperatureSimulator;
+			kelvinBuilder: subprogram Datatypes::constructKelvin;
+		    u160: subprogram Subprograms::u160;
+		annex Bless {**
+		  variables
+		    temperatureContainer ~ Datatypes_Kelvin_impl;
+		    --ZERO ~ Base_Types_Unsigned_16 := 0;
+		    ZERO ~ Base_Types_Unsigned_16;
+		  states
+            uninit : initial state;
+            running : complete state;
+          transitions
+            requiredLabel_1: uninit -[]-> running {
+            	-- FIXME: get 'couldn't resolve reference to Parameter ..' for subcomponent version
+            	--kelvinBuilder(value:ZERO, result:temperatureContainer);
+            	
+            	-- FIXME: note only one has a formal, so could allow mixtures?, but first arg
+            	-- should be a Base_Types::Unsigned_16
+            	--kelvinBuilder_REQUIRES_HACK(temperatureContainer, value:ZERO);
+            
+                u160_REQUIRES_HACK(value:ZERO);
+                	
+            	kelvinBuilder_REQUIRES_HACK(value:ZERO, result:temperatureContainer);
+            	
+            	reported_temperature := temperatureContainer
+            };
+            requiredLabel_2: running -[on dispatch]-> running {
+            	--FIXME: result is not resolved due to subcomponents
+            	--senseTemperature(result:temperatureContainer);
+            	
+            	senseTemperature_REQUIRES_HACK(result:temperatureContainer);
+            	reported_temperature := temperatureContainer
+            };
+		**};
+		
+        --annex behavior_specification {**
+        --  variables
+        --    temperatureContainer : Datatypes::Kelvin.impl;
+        --  states
+        --    uninit : initial state;
+        --    running : complete state;
+        --  transitions
+        --    uninit -[]-> running {
+        --      -- Slang equivalent 
+        --      --   temperatureContainer = kelvinBuilder(u16"0")
+        --      kelvinBuilder ! ("u16$0", temperatureContainer); 
+        --      
+        --      reported_temperature := temperatureContainer
+        --    };
+        --    running -[on dispatch]-> running {
+        --    	--TODO: BA allows the following
+        --    	--temperatureSimulator!(0, temperatureContainer);
+        --      
+        --      senseTemperature!(temperatureContainer);
+        --      reported_temperature := temperatureContainer
+        --    };
+        --**};
+
+		annex EMV2 {**
+			use types ErrorLibrary;
+			
+			error propagations
+				reported_temperature: out propagation {OutOfRange, StuckValue, OutOfBounds, OutOfCalibration,
+					UndetectableValueError, BoundedValueChange};
+				flows
+					s1_outofrange_path: error source reported_temperature {OutOfRange, StuckValue, OutOfBounds, OutOfCalibration,
+						UndetectableValueError, BoundedValueChange};
+			
+			end propagations;
+		**};
+
+		annex agree {**
+			-- Full Military temperature grade: −55 °C to 125 °C
+			-- In kelvin (floor/ceiling): 218K to 399K
+			assume "Environmental temperature within full military grade." :
+				(218 <= temperature_input.temperature) and (temperature_input.temperature <= 399);
+		
+			guarantee "Initial value of temperature output is zero." :
+				(reported_temperature.temperature = 0) -> true;
+				
+			guarantee "Reported temperature equals input temperature after initial state." :
+				true -> (reported_temperature.temperature = temperature_input.temperature);
+		
+		**};
+	end sensor.impl;
+end Sensors;
