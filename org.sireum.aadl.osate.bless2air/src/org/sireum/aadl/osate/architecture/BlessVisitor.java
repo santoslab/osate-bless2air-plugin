@@ -1189,4 +1189,10 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 	public List<AnnexLib> buildAnnexLibraries(Element arg0) {
 		return VisitorUtil.iList();
 	}
+
+	@Override
+	public List<Annex> visit(org.osate.aadl2.Classifier c, List<String> path) {
+		throw new RuntimeException("todo");
+		// return null;
+	}
 }
