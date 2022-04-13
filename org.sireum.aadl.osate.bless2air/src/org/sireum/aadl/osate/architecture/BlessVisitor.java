@@ -202,6 +202,11 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		}
 	}
 
+	 @Override
+	  public List<Annex> visit(org.osate.aadl2.Classifier c, List<String> path) {
+	    return new ArrayList<>();
+	  }
+	 
 	@Override
 	public List<Annex> visit(ComponentInstance ci, List<String> path) {
 		List<Annex> ret = new ArrayList<>();
@@ -875,7 +880,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 					}
 				}
 
-				assert paramName.nonEmpty() : "paramName is empty";
+				assert object.getParameters().getVariables().size() == 1 || paramName.nonEmpty() : "paramName is empty";
 
 				params.add(BTSFormalExpPair$.MODULE$.apply(paramName, exp, toNone()));
 			}
@@ -1188,11 +1193,5 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 	@Override
 	public List<AnnexLib> buildAnnexLibraries(Element arg0) {
 		return VisitorUtil.iList();
-	}
-
-	@Override
-	public List<Annex> visit(org.osate.aadl2.Classifier c, List<String> path) {
-		throw new RuntimeException("todo");
-		// return null;
 	}
 }
