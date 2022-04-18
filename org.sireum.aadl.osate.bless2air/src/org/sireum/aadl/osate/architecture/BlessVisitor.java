@@ -114,6 +114,7 @@ import com.multitude.aadl.bless.bLESS.BLESSSubclause;
 import com.multitude.aadl.bless.bLESS.BasicAction;
 import com.multitude.aadl.bless.bLESS.BehaviorActions;
 import com.multitude.aadl.bless.bLESS.BehaviorState;
+import com.multitude.aadl.bless.bLESS.BehaviorTime;
 import com.multitude.aadl.bless.bLESS.BehaviorTransition;
 import com.multitude.aadl.bless.bLESS.CommunicationAction;
 import com.multitude.aadl.bless.bLESS.Conjunction;
@@ -551,6 +552,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		return false;
 	}
 
+//BRL	
 	@Override
 	public Boolean caseVariableDeclaration(VariableDeclaration object) {
 
@@ -604,6 +606,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 
 		BTSType varType = pop();
 
+//BRL array size not part of variable declaration		
 		Option<BLESSIntConst> arraySize = toNone();
 
 		BTSVariableDeclaration vd = BTSVariableDeclaration$.MODULE$.apply(name, category, varType, assignExpression,
@@ -1016,8 +1019,36 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		return false;
 	}
 
-	@Override
-	public Boolean caseExecuteCondition(ExecuteCondition object) {
+//BRL
+  @Override
+  public Boolean caseBehaviorTime(BehaviorTime object) {
+  
+  if (object.getQuantity() != null)
+    {
+    visit(object.getQuantity());
+    BTSQuantity quantity = pop();
+    push(quantity);
+    }
+  
+  if (object.getValue() != null)
+    {
+    visit(object.getValue());
+    BTSValue value = pop();
+    push(value);
+    }
+  
+  if (object.getDuration() != null)
+    {
+    visit(object.getDuration());
+    BTSExp duration = pop();
+    push(duration);
+    }
+  
+  return false;
+  }
+
+  @Override
+  public Boolean caseExecuteCondition(ExecuteCondition object) {
 
 		visit(object.getEor());
 		BTSExp e = pop();
