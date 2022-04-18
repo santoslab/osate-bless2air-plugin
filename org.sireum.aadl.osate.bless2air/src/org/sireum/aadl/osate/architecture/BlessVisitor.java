@@ -132,6 +132,8 @@ import com.multitude.aadl.bless.bLESS.InternalCondition;
 import com.multitude.aadl.bless.bLESS.ModeCondition;
 import com.multitude.aadl.bless.bLESS.NamedAssertion;
 import com.multitude.aadl.bless.bLESS.NamelessAssertion;
+import com.multitude.aadl.bless.bLESS.NamelessEnumeration;
+import com.multitude.aadl.bless.bLESS.NamelessFunction;
 import com.multitude.aadl.bless.bLESS.PartialName;
 import com.multitude.aadl.bless.bLESS.PortInput;
 import com.multitude.aadl.bless.bLESS.PortOutput;
@@ -168,6 +170,9 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		this.v = v;
 	}
 
+//BRL
+//because data components cannot be BLESS types, do we need to
+//make fake data components for each type definition in typedef libraries?	
 	private Option<Classifier> resolveBlessType(TypeDeclaration t) {
 		String blessTypeName = t.getQualifiedName();
 		if (resolvedBlessTypes.containsKey(blessTypeName)) {
@@ -403,23 +408,113 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 
 	@Override
 	public Boolean caseNamedAssertion(NamedAssertion object) {
-		handle(object);
-
+//		handle(object);
+//BRL
+	//name=ID
+  Name id = toSimpleName(object.getName());
+  //formals=VariableList
+  List<BTSVariable> variableList = new ArrayList<>();
+  if (object.getFormals() != null)
+    {
+    visit(object.getFormals().getFirst());
+    variableList.add(pop());
+    for (Variable parameter: object.getFormals().getParameter())
+      {
+      visit(parameter);
+      variableList.add(pop());     
+      }    
+    } 
+  //predicate=Predicate
+  Option<BTSExp> predicate = toNone();
+  if (object.getPredicate() != null)
+    {
+    visit(object.getPredicate());
+    predicate = pop();
+    }
+  //'returns' tod=TypeOrReference
+  Option<BTSType> tod = toNone();
+  if (object.getTod() != null)
+    {
+    visit(object.getTod());
+    tod = pop();
+    }
+  //':='  functionvalue=AssertionFunctionValue
+  Option<BTSAssertionFunctionValue> functionvalue = toNone();
+  if (object.getFunctionvalue() != null)
+    {
+    visit(object.getFunctionvalue());
+    functionvalue = pop();
+    }
+  //assertionvariable=ID 
+  Option<String> assertionvariable = toNone();
+  if (object.getAssertionvariable() != null)
+    {
+    assertionvariable = toSome(object.getAssertionvariable());
+    }
+  //enumerationType=[TypeDeclaration] 
+  Option<BTSType> enumerationType = toNone();
+  if (object.getEnumerationType() != null)
+    {
+    visit(object.getEnumerationType());
+    enumerationType = pop();
+    }
+  //enumer?='+=>' enumeration=AssertionEnumeration
+  Option<BTSAssertionEnumeration> enumeration = toNone();
+  if (object.getEnumerationType() != null)
+    {
+    visit(object.getEnumeration());
+    enumeration = pop();
+    }
+  BTSAssertion na = BTSNamedAssertion.MODULE$.apply(id,variableList,
+      predicate,tod,functionvalue,assertionvariable,enumerationType,enumeration);
+  push(na);
 		return false;
 	}
 
-	@Override
-	public Boolean caseNamelessAssertion(NamelessAssertion object) {
+//NamelessAssertion:  '<<' predicate=Predicate '>>' ;	
+  @Override
+  public Boolean caseNamelessAssertion(NamelessAssertion object) {
 
-		visit(object.getPredicate());
-		BTSExp exp = pop();
+    visit(object.getPredicate());
+    BTSExp exp = pop();
 
-		// TODO: I guess we never fleshed out assertion subtypes
-		BTSAssertion a = BTSAssertion$.MODULE$.apply();
-		push(a);
+    // TODO: I guess we never fleshed out assertion subtypes
+    BTSAssertion a = BTSNamelessAssertion$.MODULE$.apply(exp);
+    push(a);
 
-		return false;
-	}
+    return false;
+  }
+
+//NamelessFunction:  '<<' 'returns' tod=TypeOrReference func?=':=' functionvalue=AssertionFunctionValue '>>' ;
+  @Override
+  public Boolean caseNamelessFunction(NamelessFunction object) {
+
+    visit(object.getTod());
+    BTSType tod = pop();
+    visit(object.getFunctionvalue());
+    BTSAssertionFunctionValue functionvalue = pop();
+    
+
+    // TODO: I guess we never fleshed out assertion subtypes
+    BTSAssertion a = BTSNamelessFunction$.MODULE$.apply(tod,functionvalue);
+    push(a);
+
+    return false;
+  }
+
+//NamelessEnumeration:  '<<' '+=>' enumeration=Invocation '>>';  
+  @Override
+  public Boolean caseNamelessEnumeration(NamelessEnumeration object) {
+
+    visit(object.getEnumeration());
+    BTSInvocation enumeration = pop();
+
+    // TODO: I guess we never fleshed out assertion subtypes
+    BTSAssertion a = BTSNamelessEnumeration$.MODULE$.apply(enumeration);
+    push(a);
+
+    return false;
+  }
 
 	@Override
 	public Boolean caseValue(Value object) {
@@ -460,7 +555,12 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		} else if (id instanceof Variable) {
 			// use simple name
 			name = VisitorUtil.toIList(id.getName());
-		} else {
+		} 
+		else if (id instanceof Subprogram)
+		  {
+//GENERATE AIR FOR SUBPROGRAM CALL		  
+		  }		
+		else {
 			throw new RuntimeException("what is " + id);
 		}
 
