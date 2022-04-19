@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Stack;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
@@ -27,6 +28,7 @@ import org.sireum.Z;
 import org.sireum.Z$;
 import org.sireum.aadl.osate.util.BAUtils;
 import org.sireum.aadl.osate.util.SlangUtils;
+import org.sireum.hamr.ir.*;
 import org.sireum.hamr.ir.Annex;
 import org.sireum.hamr.ir.Annex$;
 import org.sireum.hamr.ir.AnnexLib;
@@ -37,7 +39,6 @@ import org.sireum.hamr.ir.BTSAction;
 import org.sireum.hamr.ir.BTSAssertedAction;
 import org.sireum.hamr.ir.BTSAssertedAction$;
 import org.sireum.hamr.ir.BTSAssertion;
-import org.sireum.hamr.ir.BTSAssertion$;
 import org.sireum.hamr.ir.BTSAssignmentAction;
 import org.sireum.hamr.ir.BTSAssignmentAction$;
 import org.sireum.hamr.ir.BTSBLESSAnnexClause;
@@ -102,6 +103,7 @@ import org.sireum.hamr.ir.Component;
 import org.sireum.hamr.ir.Name;
 import org.sireum.hamr.ir.Property;
 import org.sireum.hamr.ir.ValueProp;
+import org.sireum.message.Position;
 
 import com.multitude.aadl.bless.bLESS.AddSub;
 import com.multitude.aadl.bless.bLESS.Alternative;
@@ -126,10 +128,13 @@ import com.multitude.aadl.bless.bLESS.DispatchTrigger;
 import com.multitude.aadl.bless.bLESS.ElseAlternative;
 import com.multitude.aadl.bless.bLESS.ElseifAlternative;
 import com.multitude.aadl.bless.bLESS.ExecuteCondition;
+import com.multitude.aadl.bless.bLESS.Exp;
 import com.multitude.aadl.bless.bLESS.FormalActual;
+import com.multitude.aadl.bless.bLESS.GhostVariable;
 import com.multitude.aadl.bless.bLESS.GuardedAction;
 import com.multitude.aadl.bless.bLESS.InternalCondition;
 import com.multitude.aadl.bless.bLESS.ModeCondition;
+import com.multitude.aadl.bless.bLESS.MultDiv;
 import com.multitude.aadl.bless.bLESS.NamedAssertion;
 import com.multitude.aadl.bless.bLESS.NamelessAssertion;
 import com.multitude.aadl.bless.bLESS.NamelessEnumeration;
@@ -142,6 +147,7 @@ import com.multitude.aadl.bless.bLESS.Relation;
 import com.multitude.aadl.bless.bLESS.Subexpression;
 import com.multitude.aadl.bless.bLESS.SubprogramCall;
 import com.multitude.aadl.bless.bLESS.TransitionLabel;
+import com.multitude.aadl.bless.bLESS.TriggerLogicalExpression;
 import com.multitude.aadl.bless.bLESS.Type;
 import com.multitude.aadl.bless.bLESS.TypeDeclaration;
 import com.multitude.aadl.bless.bLESS.UnaryOperator;
@@ -165,6 +171,12 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 	private List<String> featureNames = null;
 	private List<String> subcomponentNames = null;
 	private Map<String, Classifier> resolvedBlessTypes = new HashMap<>();
+
+	public static Option<Position> buildPosInfo(EObject object) 
+	  {
+  Position p = VisitorUtil.buildPosInfo(object);
+  return p == null ? SlangUtils.toNone() : SlangUtils.toSome(p);
+    }
 
 	public BlessVisitor(Visitor v) {
 		this.v = v;
@@ -411,7 +423,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 //		handle(object);
 //BRL
 	//name=ID
-  Name id = toSimpleName(object.getName());
+  String id = object.getName();
   //formals=VariableList
   List<BTSVariable> variableList = new ArrayList<>();
   if (object.getFormals() != null)
@@ -429,44 +441,44 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
   if (object.getPredicate() != null)
     {
     visit(object.getPredicate());
-    predicate = pop();
+    predicate = toSome(pop());
     }
   //'returns' tod=TypeOrReference
   Option<BTSType> tod = toNone();
   if (object.getTod() != null)
     {
     visit(object.getTod());
-    tod = pop();
+    tod = toSome(pop());
     }
   //':='  functionvalue=AssertionFunctionValue
   Option<BTSAssertionFunctionValue> functionvalue = toNone();
   if (object.getFunctionvalue() != null)
     {
     visit(object.getFunctionvalue());
-    functionvalue = pop();
+    functionvalue = toSome(pop());
     }
   //assertionvariable=ID 
-  Option<String> assertionvariable = toNone();
+  Option<org.sireum.String> assertionvariable = toNone();
   if (object.getAssertionvariable() != null)
     {
-    assertionvariable = toSome(object.getAssertionvariable());
+    assertionvariable = toSome(new org.sireum.String(object.getAssertionvariable()));
     }
   //enumerationType=[TypeDeclaration] 
-  Option<BTSType> enumerationType = toNone();
+  Option<BTSEnumerationType> enumerationType = toNone();
   if (object.getEnumerationType() != null)
     {
     visit(object.getEnumerationType());
-    enumerationType = pop();
+    enumerationType = toSome(pop());
     }
   //enumer?='+=>' enumeration=AssertionEnumeration
   Option<BTSAssertionEnumeration> enumeration = toNone();
   if (object.getEnumerationType() != null)
     {
     visit(object.getEnumeration());
-    enumeration = pop();
+    enumeration = toSome(pop());
     }
-  BTSAssertion na = BTSNamedAssertion.MODULE$.apply(id,variableList,
-      predicate,tod,functionvalue,assertionvariable,enumerationType,enumeration);
+  BTSAssertion na = BTSNamedAssertion$.MODULE$.apply(id,VisitorUtil.toISZ(variableList),
+      predicate,tod,functionvalue,assertionvariable,enumerationType,enumeration,buildPosInfo(object));
   push(na);
 		return false;
 	}
@@ -479,7 +491,8 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
     BTSExp exp = pop();
 
     // TODO: I guess we never fleshed out assertion subtypes
-    BTSAssertion a = BTSNamelessAssertion$.MODULE$.apply(exp);
+    BTSAssertion a = BTSNamelessAssertion$.MODULE$.apply(exp,
+        buildPosInfo(object));
     push(a);
 
     return false;
@@ -496,7 +509,8 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
     
 
     // TODO: I guess we never fleshed out assertion subtypes
-    BTSAssertion a = BTSNamelessFunction$.MODULE$.apply(tod,functionvalue);
+    BTSAssertion a = BTSNamelessFunction$.MODULE$.apply(tod,functionvalue,
+        buildPosInfo(object));
     push(a);
 
     return false;
@@ -510,7 +524,8 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
     BTSInvocation enumeration = pop();
 
     // TODO: I guess we never fleshed out assertion subtypes
-    BTSAssertion a = BTSNamelessEnumeration$.MODULE$.apply(enumeration);
+    BTSAssertion a = BTSNamelessEnumeration$.MODULE$.apply(enumeration,
+        buildPosInfo(object));
     push(a);
 
     return false;
@@ -556,10 +571,16 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 			// use simple name
 			name = VisitorUtil.toIList(id.getName());
 		} 
-		else if (id instanceof Subprogram)
-		  {
-//GENERATE AIR FOR SUBPROGRAM CALL		  
-		  }		
+    else if (id instanceof Subprogram)
+      {
+      // use simple name
+      name = VisitorUtil.toIList(id.getName());
+      }   
+    else if (id instanceof GhostVariable)
+      {
+      // use simple name
+      name = VisitorUtil.toIList(id.getName());
+      }   
 		else {
 			throw new RuntimeException("what is " + id);
 		}
@@ -1161,48 +1182,54 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 
 	@Override
 	public Boolean caseDisjunction(Disjunction object) {
-		visit(object.getL());
-		BTSExp lhs = pop();
-
-		if (object.getR().isEmpty()) {
-			push(lhs);
-			return false;
-		}
-
-		assert (object.getR().size() == 1); // I don't understand this
-
-		visit(object.getR().get(0));
-		BTSExp rhs = pop();
-
-		BTSBinaryOp.Type op = toBinaryOp(object.getSym());
-
-		BTSBinaryExp be = BTSBinaryExp$.MODULE$.apply(op, lhs, rhs, toNone());
-		push(be);
-
-		return false;
+  //push all operands onto a stack
+  Stack<BTSExp> exps = new Stack<>();
+  visit(object.getL());
+  exps.push(pop());
+  for (Conjunction r: object.getR())
+    {
+    visit(r);
+    exps.push(pop());     
+    }
+  
+  //replace top two elements on stack with op(l,r) until only one remains
+  while (exps.size() > 1) 
+    {
+    BTSExp lhs = exps.pop();
+    BTSExp rhs = exps.pop();
+    BTSBinaryOp.Type op = BAUtils.toBinaryOp(object.getSym());
+    exps.push(BTSBinaryExp$.MODULE$.apply(op, lhs, rhs, buildPosInfo(object)));
+    }
+  
+  //just one BTSExp on stack
+  push(exps.pop());
+  return false;
 	}
 
 	@Override
 	public Boolean caseConjunction(Conjunction object) {
-		visit(object.getL());
-		BTSExp lhs = pop();
-
-		if (object.getR().isEmpty()) {
-			push(lhs);
-			return false;
-		}
-
-		assert (object.getR().size() == 1); // I don't understand this
-
-		visit(object.getR().get(0));
-		BTSExp rhs = pop();
-
-		BTSBinaryOp.Type op = toBinaryOp(object.getSym());
-
-		BTSBinaryExp be = BTSBinaryExp$.MODULE$.apply(op, lhs, rhs, toNone());
-		push(be);
-
-		return false;
+  //push all operands onto a stack
+  Stack<BTSExp> exps = new Stack<>();
+  visit(object.getL());
+  exps.push(pop());
+  for (Relation r: object.getR())
+    {
+    visit(r);
+    exps.push(pop());     
+    }
+  
+  //replace top two elements on stack with op(l,r) until only one remains
+  while (exps.size() > 1) 
+    {
+    BTSExp lhs = exps.pop();
+    BTSExp rhs = exps.pop();
+    BTSBinaryOp.Type op = BAUtils.toBinaryOp(object.getSym());
+    exps.push(BTSBinaryExp$.MODULE$.apply(op, lhs, rhs, buildPosInfo(object)));
+    }
+  
+  //just one BTSExp on stack
+  push(exps.pop());
+  return false;
 	}
 
 	@Override
@@ -1226,29 +1253,57 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		return false;
 	}
 
-	@Override
-	public Boolean caseAddSub(AddSub object) {
+  @Override
+  public Boolean caseAddSub(AddSub object) {
+    //push all operands onto a stack
+    Stack<BTSExp> exps = new Stack<>();
+    visit(object.getL());
+    exps.push(pop());
+    for (MultDiv r: object.getR())
+      {
+      visit(r);
+      exps.push(pop());     
+      }
+    
+    //replace top two elements on stack with op(l,r) until only one remains
+    while (exps.size() > 1) 
+      {
+      BTSExp lhs = exps.pop();
+      BTSExp rhs = exps.pop();
+      BTSBinaryOp.Type op = BAUtils.toBinaryOp(object.getSym());
+      exps.push(BTSBinaryExp$.MODULE$.apply(op, lhs, rhs, buildPosInfo(object)));
+      }
+    
+    //just one BTSExp on stack
+    push(exps.pop());
+    return false;
+  }
 
-		visit(object.getL());
-		BTSExp lhs = pop();
-
-		if (object.getR() == null || object.getR().isEmpty()) {
-			push(lhs);
-			return false;
-		}
-
-		// TODO: convert exp with multiple rhs into a single/nested bexp
-		assert object.getR().size() == 1 : "Not supporting weird things :)  AddSub must have a single rhs";
-
-		visit(object.getR().get(0));
-		BTSExp rhs = pop();
-
-		BTSBinaryOp.Type op = BAUtils.toBinaryOp(object.getSym());
-
-		push(BTSBinaryExp$.MODULE$.apply(op, lhs, rhs, toNone()));
-
-		return false;
-	}
+  @Override
+  public Boolean caseMultDiv(MultDiv object) {
+    //push all operands onto a stack
+    Stack<BTSExp> exps = new Stack<>();
+    visit(object.getL());
+    exps.push(pop());
+    for (Exp r: object.getR())
+      {
+      visit(r);
+      exps.push(pop());     
+      }
+    
+    //replace top two elements on stack with op(l,r) until only one remains
+    while (exps.size() > 1) 
+      {
+      BTSExp lhs = exps.pop();
+      BTSExp rhs = exps.pop();
+      BTSBinaryOp.Type op = BAUtils.toBinaryOp(object.getSym());
+      exps.push(BTSBinaryExp$.MODULE$.apply(op, lhs, rhs, buildPosInfo(object)));
+      }
+    
+    //just one BTSExp on stack
+    push(exps.pop());
+    return false;
+  }
 
 	@Override
 	public Boolean caseRelation(Relation object) {
@@ -1273,19 +1328,28 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 
 	@Override
 	public Boolean caseModeCondition(ModeCondition object) {
-		handle(object.getClass());
-
-		BTSModeCondition c = BTSModeCondition.apply();
+		visit(object.getTle());
+		BTSTriggerLogicalExpression tle = pop();
+		BTSModeCondition c = BTSModeCondition$.MODULE$.apply(tle);
 		push(c);
-
 		return false;
 	}
 
 	@Override
+	public Boolean caseTriggerLogicalExpression(TriggerLogicalExpression object)
+	{
+	
+	return false;
+	}
+	
+	@Override
 	public Boolean caseInternalCondition(InternalCondition object) {
-		handle(object.getClass());
-
-		BTSInternalCondition c = BTSInternalCondition.apply();
+    ArrayList<Name> ports = new ArrayList<Name>();
+    ports.add(toName(object.getFirst()));
+    for (Port p: object.getPorts())
+      ports.add(toName(p));
+    
+		BTSInternalCondition c = BTSInternalCondition$.MODULE$.apply(VisitorUtil.toISZ(ports));
 		push(c);
 
 		return false;
