@@ -106,6 +106,7 @@ import org.sireum.hamr.ir.Property;
 import org.sireum.hamr.ir.ValueProp;
 import org.sireum.message.Position;
 
+import com.multitude.aadl.bless.bLESS.ActualParameter;
 import com.multitude.aadl.bless.bLESS.AddSub;
 import com.multitude.aadl.bless.bLESS.Alternative;
 import com.multitude.aadl.bless.bLESS.AssertedAction;
@@ -119,7 +120,10 @@ import com.multitude.aadl.bless.bLESS.BehaviorActions;
 import com.multitude.aadl.bless.bLESS.BehaviorState;
 import com.multitude.aadl.bless.bLESS.BehaviorTime;
 import com.multitude.aadl.bless.bLESS.BehaviorTransition;
+import com.multitude.aadl.bless.bLESS.CaseChoice;
+import com.multitude.aadl.bless.bLESS.CaseExpression;
 import com.multitude.aadl.bless.bLESS.CommunicationAction;
+import com.multitude.aadl.bless.bLESS.ConditionalExpression;
 import com.multitude.aadl.bless.bLESS.Conjunction;
 import com.multitude.aadl.bless.bLESS.Constant;
 import com.multitude.aadl.bless.bLESS.Disjunction;
@@ -128,25 +132,33 @@ import com.multitude.aadl.bless.bLESS.DispatchConjunction;
 import com.multitude.aadl.bless.bLESS.DispatchTrigger;
 import com.multitude.aadl.bless.bLESS.ElseAlternative;
 import com.multitude.aadl.bless.bLESS.ElseifAlternative;
+import com.multitude.aadl.bless.bLESS.EventTrigger;
 import com.multitude.aadl.bless.bLESS.ExecuteCondition;
 import com.multitude.aadl.bless.bLESS.Exp;
 import com.multitude.aadl.bless.bLESS.FormalActual;
 import com.multitude.aadl.bless.bLESS.GhostVariable;
 import com.multitude.aadl.bless.bLESS.GuardedAction;
 import com.multitude.aadl.bless.bLESS.InternalCondition;
+import com.multitude.aadl.bless.bLESS.Invocation;
 import com.multitude.aadl.bless.bLESS.ModeCondition;
 import com.multitude.aadl.bless.bLESS.MultDiv;
 import com.multitude.aadl.bless.bLESS.NamedAssertion;
 import com.multitude.aadl.bless.bLESS.NamelessAssertion;
 import com.multitude.aadl.bless.bLESS.NamelessEnumeration;
 import com.multitude.aadl.bless.bLESS.NamelessFunction;
+import com.multitude.aadl.bless.bLESS.ParenthesizedSubexpression;
 import com.multitude.aadl.bless.bLESS.PartialName;
+import com.multitude.aadl.bless.bLESS.PeriodShift;
 import com.multitude.aadl.bless.bLESS.PortInput;
 import com.multitude.aadl.bless.bLESS.PortOutput;
 import com.multitude.aadl.bless.bLESS.Quantity;
+import com.multitude.aadl.bless.bLESS.RecordTerm;
+import com.multitude.aadl.bless.bLESS.RecordValue;
 import com.multitude.aadl.bless.bLESS.Relation;
 import com.multitude.aadl.bless.bLESS.Subexpression;
 import com.multitude.aadl.bless.bLESS.SubprogramCall;
+import com.multitude.aadl.bless.bLESS.TimedExpression;
+import com.multitude.aadl.bless.bLESS.TimedSubject;
 import com.multitude.aadl.bless.bLESS.TransitionLabel;
 import com.multitude.aadl.bless.bLESS.TriggerLogicalExpression;
 import com.multitude.aadl.bless.bLESS.Type;
@@ -621,10 +633,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 			exp = "true";
 		} else if (object.getNumeric_constant() != null) {
 			Quantity q = object.getNumeric_constant();
-
-			assert q.isScalar() || q.isWhole() || q.getUnit() != null : 
-			  "quantity literal must be scalar, whole, or have unit";
-			if (q.isWhole())
+			if (!q.isScalar() && (q.getUnit() == null))
         typ = BTSLiteralType.byName("INTEGER").get();
 			else
         typ = BTSLiteralType.byName("FLOAT").get();
@@ -1245,24 +1254,223 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 
 		if (object.getUnary() != null) {
 			UnaryOperator uo = object.getUnary();
-			if (uo.getNot() != null) {
-				visit(object.getTimed_expression());
-				BTSExp boolExp = pop();
-
-				BTSUnaryExp bue = BTSUnaryExp$.MODULE$.apply(BAUtils.toUnaryOp("!"), boolExp, toNone());
-				push(bue);
-			} else {
+      if (uo.getNot() != null) 
+        {
+        visit(object.getTimed_expression());
+        BTSExp boolExp = pop();
+        BTSUnaryExp bue = BTSUnaryExp$.MODULE$.apply(BAUtils.toUnaryOp("!"), boolExp, toNone());
+        push(bue);
+        } 
+      else if (uo.getUnary_minus() != null) 
+        {
+        visit(object.getTimed_expression());
+        BTSExp boolExp = pop();
+        BTSUnaryExp bue = BTSUnaryExp$.MODULE$.apply(BAUtils.toUnaryOp("-"), boolExp, toNone());
+        push(bue);
+        } 
+      else if (uo.getAbsolute_value() != null) 
+        {
+        visit(object.getTimed_expression());
+        BTSExp boolExp = pop();
+        BTSUnaryExp bue = BTSUnaryExp$.MODULE$.apply(BAUtils.toUnaryOp("abs"), boolExp, toNone());
+        push(bue);
+        } 
+      else if (uo.getTruncate() != null) 
+        {
+        visit(object.getTimed_expression());
+        BTSExp boolExp = pop();
+        BTSUnaryExp bue = BTSUnaryExp$.MODULE$.apply(BAUtils.toUnaryOp("truncate"), boolExp, toNone());
+        push(bue);
+        } 
+      else if (uo.getRound() != null) 
+        {
+        visit(object.getTimed_expression());
+        BTSExp boolExp = pop();
+        BTSUnaryExp bue = BTSUnaryExp$.MODULE$.apply(BAUtils.toUnaryOp("round"), boolExp, toNone());
+        push(bue);
+        } 
+			else {
 				throw new RuntimeException("Need to handle other types of unary exp " + uo);
 			}
 		} else {
 			visit(object.getTimed_expression());
 		}
 
-		return false;
-	}
+    return false;
+  }
 
-  @Override
-  public Boolean caseAddSub(AddSub object) {
+	@Override
+	public Boolean caseTimedExpression(TimedExpression object)
+	  {
+	  visit(object.getSubject());
+	  BTSExp subject = pop();
+	  if (object.getTick() != null)
+	    {  // e'
+      push(BTSTimedExpression$.MODULE$.apply(subject, true, toNone(), toNone(), buildPosInfo(object)));
+	    }
+	  else if (object.isAt())
+	    {  // e@t
+	    visit(object.getTime());
+	    BTSExp time = pop();
+      push(BTSTimedExpression$.MODULE$.apply(subject, false, toSome(time), toNone(), buildPosInfo(object)));
+	    }
+	  else if (object.isCaret())
+	    {  // e^k
+      visit(object.getShift());
+      BTSExp shift = pop();	    
+      push(BTSTimedExpression$.MODULE$.apply(subject, false, toNone(), toSome(shift), buildPosInfo(object)));	    
+	    }
+	  else
+	    {  //no modifier
+	    push(BTSTimedExpression$.MODULE$.apply(subject, false, toNone(), toNone(), buildPosInfo(object)));
+	    }
+	  return false;
+	  }
+
+	@Override
+	public Boolean casePeriodShift(PeriodShift object)
+	  {
+	  if (object.getV() != null)
+	    {
+	    visit(object.getV());
+	    BTSValue value = pop();
+	    if (object.isUnary_minus())
+        push(BTSUnaryExp$.MODULE$.apply(BAUtils.toUnaryOp("-"), value, buildPosInfo(object)));
+	    else 
+	      push(value);
+	    }  
+	  else if (object.getIndex_expression() != null)  
+      {
+      visit(object.getIndex_expression());
+      BTSValue index = pop();
+      if (object.isUnary_minus())
+        push(BTSUnaryExp$.MODULE$.apply(BAUtils.toUnaryOp("-"), index, buildPosInfo(object)));
+      else 
+        push(index);
+      }  
+    else 
+      throw new RuntimeException("Period shift needs a value or an index expression.");
+	  return false;
+	  }
+
+@Override
+public Boolean caseTimedSubject(TimedSubject object)
+  {
+  if (object.getPs() != null)
+    visit(object.getPs());
+  else if (object.getValue() != null)
+    visit(object.getValue());
+  else if (object.getConditional() != null)
+    visit(object.getConditional());
+  else if (object.getRecord() != null)
+    visit(object.getRecord());
+  else if (object.getInvocation() != null)
+    visit(object.getInvocation());
+  return false;
+  }
+
+@Override
+public Boolean caseParenthesizedSubexpression(ParenthesizedSubexpression object)
+  {
+  if (object.getCaseexpression() != null)
+    visit(object.getCaseexpression());
+  else
+    {
+    visit(object.getExpression());
+    BTSExp e = pop();
+    if (object.getT() != null)
+      {
+      visit(object.getT());
+      BTSExp t = pop();
+      visit(object.getF());
+      BTSExp f = pop();
+      push(BTSConditionalExpression$.MODULE$.apply(e, t, f, buildPosInfo(object)));
+      }
+    else push(e);
+    }
+  return false;
+  }
+
+@Override
+public Boolean caseConditionalExpression(ConditionalExpression object)
+  {
+  visit(object.getPred());
+  BTSExp pred = pop();
+  visit(object.getT());
+  BTSExp t = pop();
+  visit(object.getF());
+  BTSExp f = pop();
+  push(BTSConditionalExpression$.MODULE$.apply(pred, t, f, buildPosInfo(object)));
+  return false;
+  }
+
+@Override
+public Boolean caseRecordTerm(RecordTerm object)
+  {
+  visit(object.getRecord_type());
+  BTSType record_type = pop();
+  ArrayList<BTSRecordValue> va = new ArrayList<>();
+  for (RecordValue rv : object.getRecord_value())
+    {
+    visit(rv);
+    va.add(pop());
+    }
+  push(BTSRecordTerm$.MODULE$.apply(record_type, l2is(va), buildPosInfo(object)));
+  return false;
+  }
+
+@Override
+public Boolean caseInvocation(Invocation object)
+  {
+  visit(object.getLabel());
+  BTSNamedAssertion label = pop();
+  ArrayList<BTSActualParameter> params = new ArrayList<>();
+  if (object.getActual_parameter() != null)
+    {
+    visit(object.getActual_parameter());
+    BTSExp actual = pop();
+    push(BTSInvocation$.MODULE$.apply(label, l2is(params), 
+        toSome(actual), buildPosInfo(object)));
+    }
+  else
+    {
+    for (ActualParameter p : object.getParams())
+      {
+      visit(p);
+      params.add(pop());
+      }
+    push(BTSInvocation$.MODULE$.apply(label, l2is(params), 
+        toNone(), buildPosInfo(object)));
+    }
+  return false;
+  }
+
+@Override
+public Boolean caseCaseExpression(CaseExpression object)
+  {
+  ArrayList<BTSCaseChoice> choices = new ArrayList<>();
+  for (CaseChoice cc : object.getCc())
+    {
+    visit(cc);
+    choices.add(pop());
+    }
+  push(BTSCaseExpression$.MODULE$.apply(l2is(choices), buildPosInfo(object)));
+  return false;
+  }
+
+@Override
+public Boolean caseCaseChoice(CaseChoice object)
+  {
+  visit(object.getBe());
+  BTSExp be = pop();
+  visit(object.getExp());
+  BTSExp exp = pop();
+  push(BTSCaseChoice$.MODULE$.apply(be, exp));
+  return false;
+  }
+
+@Override
+public Boolean caseAddSub(AddSub object) {
     //push all operands onto a stack
     Stack<BTSExp> exps = new Stack<>();
     visit(object.getL());
@@ -1340,14 +1548,48 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		BTSTriggerLogicalExpression tle = pop();
 		BTSModeCondition c = BTSModeCondition$.MODULE$.apply(tle);
 		push(c);
-		return false;
-	}
+    return false;
+  }
 
-	@Override
-	public Boolean caseTriggerLogicalExpression(TriggerLogicalExpression object)
-	{
-	
-	return false;
+@Override
+public Boolean caseEventTrigger(EventTrigger object)
+  {
+  if (object.getTle() != null)
+    {
+    visit(object.getTle());
+    BTSTriggerLogicalExpression tle = pop();
+    push(BTSEventTrigger$.MODULE$.apply(toNone(), toSome(tle)) );
+    }
+  else
+    {
+    Name portname = toName(object.getPort().getName(), object.getSub());
+    push(BTSEventTrigger$.MODULE$.apply(toSome(portname), toNone()) );
+    } 
+  return false;
+  }
+
+@Override
+public Boolean caseTriggerLogicalExpression(TriggerLogicalExpression object)
+  {
+  Stack<BTSExp> triggers = new Stack<>();
+  visit(object.getFirst());
+  triggers.push(pop());
+  for (EventTrigger r: object.getTrigger())
+    {
+    visit(r);
+    triggers.push(pop());     
+    }
+  //replace top two elements on stack with op(l,r) until only one remains
+  while (triggers.size() > 1) 
+    {
+    BTSExp lhs = triggers.pop();
+    BTSExp rhs = triggers.pop();
+    BTSBinaryOp.Type op = BAUtils.toBinaryOp(object.getOp().getOp());
+    triggers.push(BTSBinaryExp$.MODULE$.apply(op, lhs, rhs, buildPosInfo(object)));
+    }
+  //just one BTSExp on stack
+  push(triggers.pop());
+  return false;
 	}
 	
 	@Override
