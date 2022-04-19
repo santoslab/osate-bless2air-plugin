@@ -9,3 +9,4 @@ Require-Bundle: com.multitude.aadl.bless;bundle-version="3.1.2",
 Bundle-ClassPath: bin/,
  .,
  external:$org.sireum.home$/bin/sireum.jar
+Import-Package: org.osate.xtext.aadl2.properties.util

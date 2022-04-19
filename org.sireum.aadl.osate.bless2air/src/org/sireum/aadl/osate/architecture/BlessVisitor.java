@@ -22,6 +22,7 @@ import org.osate.aadl2.Port;
 import org.osate.aadl2.Subprogram;
 import org.osate.aadl2.SubprogramAccess;
 import org.osate.aadl2.instance.ComponentInstance;
+import org.osate.xtext.aadl2.properties.util.PropertyUtils;
 import org.sireum.IS;
 import org.sireum.Option;
 import org.sireum.Z;
@@ -546,8 +547,8 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 
 				String enumValue = object.getEnum_val().getEnumeration_value();
 
-				BTSNameExp t = BTSNameExp$.MODULE$.apply(toSimpleName(classifier.get().getName()), toNone());
-				BTSAccessExp ae = BTSAccessExp$.MODULE$.apply(t, enumValue, toNone());
+				BTSNameExp t = BTSNameExp$.MODULE$.apply(toSimpleName(classifier.get().getName()), buildPosInfo(object));
+				BTSAccessExp ae = BTSAccessExp$.MODULE$.apply(t, enumValue, buildPosInfo(object));
 				push(ae);
 			} else {
 				throw new RuntimeException("Couldn't resolve enum type " + td.getFullName());
@@ -593,9 +594,9 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		if (object.isDot()) {
 			List<PartialName> attributeIds = object.getPn();
 
-			ret = BTSAccessExp$.MODULE$.apply(objectName, attributeIds.get(0).getRecord_id(), toNone());
+			ret = BTSAccessExp$.MODULE$.apply(objectName, attributeIds.get(0).getRecord_id(), buildPosInfo(object));
 			for (int i = 1; i < attributeIds.size(); i++) {
-				ret = BTSAccessExp$.MODULE$.apply(ret, attributeIds.get(i).getRecord_id(), toNone());
+				ret = BTSAccessExp$.MODULE$.apply(ret, attributeIds.get(i).getRecord_id(), buildPosInfo(object));
 			}
 
 		} else {
@@ -621,16 +622,23 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		} else if (object.getNumeric_constant() != null) {
 			Quantity q = object.getNumeric_constant();
 
-			assert !q.isScalar() : "Hmm, I'd think isScalar would be true for a single number";
-			assert q.getUnit() == null : "Need to handle the case where unit isn't null";
-
-			typ = BTSLiteralType.byName("INTEGER").get();
+			assert q.isScalar() || q.isWhole() || q.getUnit() != null : 
+			  "quantity literal must be scalar, whole, or have unit";
+			if (q.isWhole())
+        typ = BTSLiteralType.byName("INTEGER").get();
+			else
+        typ = BTSLiteralType.byName("FLOAT").get();
 			exp = q.getNumber().getLit();
-
-			assert q.getNumber().getProperty() == null && q.getNumber().getPropertyConstant() == null
-					: "What are these?";
+			if (exp == null)  //check property
+//NEED TO EXTRACT THE NUMERIC VALUE OF THE PROPERTY REFERENCE			  
+			  exp = q.getNumber().getProperty().toString(); 
+		  if (exp == null)  //check property
+//NEED TO EXTRACT THE NUMERIC VALUE OF THE PROPERTY REFERENCE       
+			  exp = q.getNumber().getPropertyConstant().toString();
+		  if (exp == null)
+        throw new RuntimeException("no quantity (constant) value found");
 		} else if (object.getNul() != null) {
-			throw new RuntimeException("nul isn't supported");
+			throw new RuntimeException("null isn't supported");
 		} else if (object.getString_literal() != null) {
 			typ = BTSLiteralType.byName("STRING").get();
 			exp = object.getString_literal();
@@ -638,7 +646,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 			throw new RuntimeException("Need to handle other types of Constant");
 		}
 
-		push(BTSLiteralExp$.MODULE$.apply(typ, exp, toNone()));
+		push(BTSLiteralExp$.MODULE$.apply(typ, exp, buildPosInfo(object)));
 		return false;
 	}
 
