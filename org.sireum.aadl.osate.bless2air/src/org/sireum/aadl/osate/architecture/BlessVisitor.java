@@ -106,11 +106,13 @@ import org.sireum.hamr.ir.Property;
 import org.sireum.hamr.ir.ValueProp;
 import org.sireum.message.Position;
 
+import com.multitude.aadl.bless.bLESS.Action;
 import com.multitude.aadl.bless.bLESS.ActualParameter;
 import com.multitude.aadl.bless.bLESS.AddSub;
 import com.multitude.aadl.bless.bLESS.Alternative;
 import com.multitude.aadl.bless.bLESS.AssertedAction;
 import com.multitude.aadl.bless.bLESS.Assertion;
+import com.multitude.aadl.bless.bLESS.AssertionEnumeration;
 import com.multitude.aadl.bless.bLESS.Assignment;
 import com.multitude.aadl.bless.bLESS.BAAlternative;
 import com.multitude.aadl.bless.bLESS.BLESSAlternative;
@@ -132,9 +134,12 @@ import com.multitude.aadl.bless.bLESS.DispatchConjunction;
 import com.multitude.aadl.bless.bLESS.DispatchTrigger;
 import com.multitude.aadl.bless.bLESS.ElseAlternative;
 import com.multitude.aadl.bless.bLESS.ElseifAlternative;
+import com.multitude.aadl.bless.bLESS.EnumerationPair;
+import com.multitude.aadl.bless.bLESS.EnumerationType;
 import com.multitude.aadl.bless.bLESS.EventTrigger;
 import com.multitude.aadl.bless.bLESS.ExecuteCondition;
 import com.multitude.aadl.bless.bLESS.Exp;
+import com.multitude.aadl.bless.bLESS.Expression;
 import com.multitude.aadl.bless.bLESS.FormalActual;
 import com.multitude.aadl.bless.bLESS.GhostVariable;
 import com.multitude.aadl.bless.bLESS.GuardedAction;
@@ -428,11 +433,43 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 
 		push(ret);
 
-		return false;
-	}
+    return false;
+  }
 
-	@Override
-	public Boolean caseNamedAssertion(NamedAssertion object) {
+  @Override
+  public Boolean caseAssertionEnumeration(AssertionEnumeration object) 
+    {
+    Option<BTSInvocation> pred = toNone();
+    ArrayList<BTSEnumerationPair> pairs = new ArrayList<>();
+    if (object.getPred() != null)
+      {
+      visit(object.getPred());
+      pred = pop();
+      }
+    else
+      {
+      for (EnumerationPair p : object.getPair())
+        {
+        visit(p);
+        pairs.add(pop());
+        }
+      }
+    push(BTSAssertionEnumeration$.MODULE$.apply(pred, l2is(pairs), buildPosInfo(object)));
+    return false;
+    }
+
+  @Override
+  public Boolean caseEnumerationPair(EnumerationPair object) 
+    {
+    visit(object.getPredicate());
+    BTSExp predicate = pop();
+    push(BTSEnumerationPair$.MODULE$.apply(
+        object.getEnumeration_literal(), predicate, buildPosInfo(object)));
+    return false;
+    }
+
+@Override
+public Boolean caseNamedAssertion(NamedAssertion object) {
 //		handle(object);
 //BRL
 	//name=ID
@@ -480,8 +517,15 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
   Option<BTSEnumerationType> enumerationType = toNone();
   if (object.getEnumerationType() != null)
     {
-    visit(object.getEnumerationType());
-    enumerationType = toSome(pop());
+    Type et = object.getEnumerationType().getType();
+    if (et instanceof EnumerationType)
+      {
+      ArrayList<org.sireum.String> enums = new ArrayList<org.sireum.String>();
+      for (String st : ((EnumerationType)et).getDefining_enumeration_literal())
+        enums.add(new org.sireum.String(st));
+      enumerationType = toSome(BTSEnumerationType$.MODULE$.
+        apply(l2is(enums)));
+      }
     }
   //enumer?='+=>' enumeration=AssertionEnumeration
   Option<BTSAssertionEnumeration> enumeration = toNone();
@@ -544,33 +588,62 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
     return false;
   }
 
-	@Override
-	public Boolean caseValue(Value object) {
+@Override
+public Boolean caseValue(Value object)
+  {
 
-		if (object.getConstant() != null) {
-			visit(object.getConstant());
-		} else if (object.getValue_name() != null) {
-			visit(object.getValue_name());
-		} else if (object.getEnum_val() != null) {
-			TypeDeclaration td = object.getEnum_val().getEnumeration_type();
-			Option<Classifier> classifier = resolveBlessType(td);
+  if (object.getConstant() != null)
+    {
+    visit(object.getConstant());
+    } 
+  else if (object.getValue_name() != null)
+    {
+    visit(object.getValue_name());
+    } 
+  else if (object.getTimeout() != null)
+    {
+    BTSValue timeout = BTSValue$.MODULE$.apply("timeout", l2is(new ArrayList<BTSFormalExpPair>()), 
+        l2is(new ArrayList<BTSIndexExpressionOrRange>()), l2is(new ArrayList<BTSPartialName>()),  buildPosInfo(object));
+    push(timeout);
+    } 
+  else if (object.getNow() != null)
+    {
+    BTSValue now = BTSValue$.MODULE$.apply("now", l2is(new ArrayList<BTSFormalExpPair>()), 
+        l2is(new ArrayList<BTSIndexExpressionOrRange>()), l2is(new ArrayList<BTSPartialName>()),  buildPosInfo(object));
+    push(now);
+    } 
+  else if (object.getTops() != null)
+    {
+    BTSValue tops = BTSValue$.MODULE$.apply("tops", l2is(new ArrayList<BTSFormalExpPair>()), 
+        l2is(new ArrayList<BTSIndexExpressionOrRange>()), l2is(new ArrayList<BTSPartialName>()),  buildPosInfo(object));
+    push(tops);
+    } 
+  else if (object.getEnum_val() != null)
+    {
+    TypeDeclaration td = object.getEnum_val().getEnumeration_type();
+    Option<Classifier> classifier = resolveBlessType(td);
+    if (classifier.nonEmpty())
+      {
 
-			if (classifier.nonEmpty()) {
+      String enumValue = object.getEnum_val().getEnumeration_value();
 
-				String enumValue = object.getEnum_val().getEnumeration_value();
+      BTSNameExp t = BTSNameExp$.MODULE$.apply(toSimpleName(classifier.get().getName()),
+          buildPosInfo(object));
+      BTSAccessExp ae = BTSAccessExp$.MODULE$.apply(t, enumValue, buildPosInfo(object));
+      push(ae);
+      } 
+    else
+      {
+      throw new RuntimeException("Couldn't resolve enum type " + td.getFullName());
+      }
+    } 
+  else
+    {
+    throw new RuntimeException("need to handle other Value types");
+    }
 
-				BTSNameExp t = BTSNameExp$.MODULE$.apply(toSimpleName(classifier.get().getName()), buildPosInfo(object));
-				BTSAccessExp ae = BTSAccessExp$.MODULE$.apply(t, enumValue, buildPosInfo(object));
-				push(ae);
-			} else {
-				throw new RuntimeException("Couldn't resolve enum type " + td.getFullName());
-			}
-		} else {
-			throw new RuntimeException("need to handle other Value types");
-		}
-
-		return false;
-	}
+  return false;
+  }
 
 	@Override
 	public Boolean caseValueName(ValueName object) {
@@ -837,11 +910,34 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 		BTSBehaviorActions a = BTSBehaviorActions$.MODULE$.apply(executionOrder, l2is(actions));
 		push(a);
 
-		return false;
-	}
+    return false;
+  }
 
-	@Override
-	public Boolean caseAssertedAction(AssertedAction object) {
+  @Override
+  public Boolean caseAction(Action object) 
+    {
+    if (object.getBasic() != null)
+      visit(object.getBasic());
+    else if (object.getIf_fi() != null)
+      visit(object.getIf_fi());
+    else if (object.getWl() != null)
+      visit(object.getWl());
+    else if (object.getFl() != null)
+      visit(object.getFl());
+    else if (object.getDu() != null)
+      visit(object.getDu());
+    else if (object.getElq() != null)
+      visit(object.getElq());
+    else if (object.getUlq() != null)
+      visit(object.getUlq());
+    else if (object.getLa() != null)
+      visit(object.getLa());
+    return false;
+    }
+
+  @Override
+  public Boolean caseAssertedAction(AssertedAction object) 
+    {
 		Option<BTSAssertion> precondition = toNone();
 		if (object.getPrecondition() != null) {
 			visit(object.getPrecondition());
@@ -930,13 +1026,43 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 	@Override
 	public Boolean caseBasicAction(BasicAction object) {
 
-		if (object.getSkip() != null) {
+		if (object.getSkip() != null) 
+		  {
 			push(BTSSkipAction$.MODULE$.apply());
-			return false;
-		} else {
-			// visit children via default case
-			return null;
-		}
+		  } 
+    else if (object.getAssign() != null)
+      {
+      visit(object.getAssign());
+      }
+    else if (object.getMode() != null)
+      {
+      visit(object.getMode());
+      }
+    else if (object.getWhen() != null)
+      {
+      visit(object.getWhen());
+      }
+    else if (object.getComb() != null)
+      {
+      visit(object.getComb());
+      }
+    else if (object.getCommunication() != null)
+      {
+      visit(object.getCommunication());
+      }
+    else if (object.getComputation() != null)
+      {
+      visit(object.getComputation());
+      }
+    else if (object.getMulti_assign() != null)
+      {
+      visit(object.getMulti_assign());
+      }
+    else if (object.getExc() != null)
+      {
+      visit(object.getExc());
+      }
+    return false;
 	}
 
 	@Override
@@ -1299,9 +1425,24 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
     return false;
   }
 
-	@Override
-	public Boolean caseTimedExpression(TimedExpression object)
-	  {
+  @Override
+  public Boolean caseExp(Exp object)
+    {
+    visit(object.getL());
+    // if no **, leave lhs on stack
+    if (object.getSym() != null)
+      {
+      BTSExp l = pop();
+      visit(object.getR());
+      BTSExp r = pop();
+      push(BTSExponentiation$.MODULE$.apply(l, toSome(r),  buildPosInfo(object)));
+      }
+    return false;
+  }
+
+  @Override
+  public Boolean caseTimedExpression(TimedExpression object)
+    {
 	  visit(object.getSubject());
 	  BTSExp subject = pop();
 	  if (object.getTick() != null)
@@ -1333,7 +1474,7 @@ public class BlessVisitor extends BLESSSwitch<Boolean> implements AnnexVisitor {
 	  if (object.getV() != null)
 	    {
 	    visit(object.getV());
-	    BTSValue value = pop();
+	    BTSExp value = pop();
 	    if (object.isUnary_minus())
         push(BTSUnaryExp$.MODULE$.apply(BAUtils.toUnaryOp("-"), value, buildPosInfo(object)));
 	    else 
@@ -1446,6 +1587,15 @@ public Boolean caseInvocation(Invocation object)
   }
 
 @Override
+public Boolean caseActualParameter(ActualParameter object)
+  {
+  visit(object.getActual());
+  BTSExp actual = pop();
+  push(BTSActualParameter$.MODULE$.apply(object.getFormal(), actual, buildPosInfo(object)));
+  return false;
+  }
+
+@Override
 public Boolean caseCaseExpression(CaseExpression object)
   {
   ArrayList<BTSCaseChoice> choices = new ArrayList<>();
@@ -1466,6 +1616,34 @@ public Boolean caseCaseChoice(CaseChoice object)
   visit(object.getExp());
   BTSExp exp = pop();
   push(BTSCaseChoice$.MODULE$.apply(be, exp));
+  return false;
+  }
+
+@Override
+public Boolean caseExpression(Expression object) 
+  {
+  if (object.getAll() != null)
+    visit(object.getAll());
+  else if (object.getExists() != null)
+    visit(object.getExists());
+  else if (object.getSum() != null)
+    visit(object.getSum());
+  else if (object.getProduct() != null)
+    visit(object.getProduct());
+  else if (object.getNumberof() != null)
+    visit(object.getNumberof());
+  else if (object.getL() != null)
+    {
+    visit(object.getL());  //leave on stack if no iff or implies
+    if (object.getSym() != null)
+      {
+      BTSExp l = pop();
+      BTSBinaryOp.Type op = BAUtils.toBinaryOp(object.getSym());
+      visit(object.getR());
+      BTSExp r = pop();
+      push(BTSBinaryExp$.MODULE$.apply(op, l, r, buildPosInfo(object)));
+      }
+    }
   return false;
   }
 
@@ -1607,6 +1785,8 @@ public Boolean caseTriggerLogicalExpression(TriggerLogicalExpression object)
 
 	@Override
 	public Boolean defaultCase(EObject o) {
+//    throw new RuntimeException("Default case for "+o.toString());
+
 		for (EObject child : o.eContents()) {
 			visit(child);
 		}
